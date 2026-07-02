@@ -14,11 +14,13 @@ source.include_exts = py,png,jpg,kv,atlas,json,db,ttf
 # Versão do app
 version = 1.0
 
-# Bibliotecas que o app precisa (Kivy + transcrição + áudio)
-# OBS: vosk e audiostream têm compilação nativa e são os pontos que mais
-# quebram o primeiro build. Se falhar, use a "build mínima" do notebook
-# (comenta vosk/audiostream) só para ter um APK que abre e roda a interface.
-requirements = python3,kivy,speechrecognition,openpyxl,audiostream,plyer,vosk
+# Bibliotecas que o app precisa.
+# 1ª VERSÃO (interface completa, compila de forma confiável): sem os pacotes de
+# áudio nativo. Os botões de voz existem mas mostram um aviso no celular — a
+# transcrição de voz no Android é uma etapa separada (vosk/audiostream têm
+# compilação nativa e exigem receitas específicas). Todo o resto funciona:
+# login, propriedades, atendimentos, histórico, salvar, excluir, temas.
+requirements = python3,kivy,openpyxl,plyer
 
 # Aceita automaticamente as licenças do Android SDK (evita travar o build)
 android.accept_sdk_license = True
