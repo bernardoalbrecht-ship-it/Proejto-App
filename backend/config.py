@@ -64,6 +64,27 @@ OPENAI_MODELO = "gpt-4o-mini"      # modelo mais barato e suficiente para esta t
 GOOGLE_SHEETS_CREDENTIALS = CREDENTIALS_DIR / "google_sheets.json"
 
 # ----------------------------------------------------------------------------
+# LOGIN COM GOOGLE (OAuth) — planilha no PRÓPRIO Drive do usuário
+# ----------------------------------------------------------------------------
+# Arquivo do "OAuth Client" (tipo App para computador) baixado do Google
+# Cloud. NÃO é commitado no repositório (fica no .gitignore); no build do APK
+# ele é criado a partir do segredo GOOGLE_OAUTH_CLIENT_JSON do GitHub Actions.
+GOOGLE_OAUTH_CLIENT = CREDENTIALS_DIR / "oauth_client.json"
+
+# Onde guardamos o token de login (por aparelho) e o índice de planilhas
+# criadas por propriedade. Ficam em DATA_DIR (área gravável do app).
+GOOGLE_TOKEN_PATH = DATA_DIR / "google_token.json"
+GOOGLE_SHEETS_INDEX = DATA_DIR / "google_sheets_index.json"
+
+# Permissões pedidas no login: e-mail (para exibir a conta), criar/editar
+# planilhas e gerenciar apenas os arquivos que o app criar (drive.file).
+GOOGLE_OAUTH_SCOPES = (
+    "openid email "
+    "https://www.googleapis.com/auth/spreadsheets "
+    "https://www.googleapis.com/auth/drive.file"
+)
+
+# ----------------------------------------------------------------------------
 # COLUNAS DO REGISTRO (mesma ordem no banco e na planilha)
 # ----------------------------------------------------------------------------
 COLUNAS = [

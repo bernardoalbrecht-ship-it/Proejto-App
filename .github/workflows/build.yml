@@ -53,6 +53,22 @@ jobs:
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-${{ runner.os }}-
 
+      - name: Configurar credenciais do Login com Google (se o segredo existir)
+        # O JSON do "OAuth Client" NÃO fica no repositório (é sensível). Aqui
+        # ele é escrito a partir do segredo GOOGLE_OAUTH_CLIENT_JSON do
+        # GitHub Actions, para ser empacotado no APK. Sem o segredo, o app
+        # compila normalmente e apenas mostra "login não configurado".
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+        run: |
+          if [ -n "$GOOGLE_OAUTH_CLIENT_JSON" ]; then
+            mkdir -p credenciais
+            printf '%s' "$GOOGLE_OAUTH_CLIENT_JSON" > credenciais/oauth_client.json
+            echo "credenciais/oauth_client.json criado a partir do segredo."
+          else
+            echo "Segredo GOOGLE_OAUTH_CLIENT_JSON ausente; login com Google ficará desativado neste APK."
+          fi
+
       - name: Compilar o APK
         # -v = log detalhado, para o erro (se houver) ficar visível.
         # Sem "yes |": a licença do SDK já é aceita pelo
