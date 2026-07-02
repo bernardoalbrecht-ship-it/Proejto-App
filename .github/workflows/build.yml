@@ -57,7 +57,18 @@ jobs:
         # -v = log detalhado, para o erro (se houver) ficar visível.
         # Sem "yes |": a licença do SDK já é aceita pelo
         # android.accept_sdk_license = True no buildozer.spec.
-        run: buildozer -v android debug
+        #
+        # IMPORTANTE: o Android Gradle Plugin exige Java 17, mas a imagem
+        # ubuntu-22.04 deixa o JAVA_HOME padrão apontando para o Java 11 na
+        # hora em que o Buildozer chama o gradlew (foi isso que quebrava o
+        # build: "Android Gradle plugin requires Java 17 ... using Java 11").
+        # Forçamos o Java 17 (JAVA_HOME_17_X64 já existe no runner) antes de
+        # compilar.
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          java -version
+          buildozer -v android debug
 
       - name: Publicar o APK como artefato para download
         uses: actions/upload-artifact@v4
