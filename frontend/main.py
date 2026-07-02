@@ -354,14 +354,34 @@ class Campo(TextInput):
         kwargs.setdefault("font_size", "16sp")
         super().__init__(**kwargs)
 
+
+class RolagemComCampos(ScrollView):
+    """ScrollView que dá foco IMEDIATO a um campo de texto ao ser tocado.
+
+    Por padrão o ScrollView segura o toque por alguns milissegundos para
+    decidir se é rolagem e só então repassa ao filho. No Android isso fazia o
+    teclado abrir apenas enquanto o dedo ficava pressionado (e sumir ao
+    soltar). Aqui, ao tocar sobre um campo, focamos na hora — o teclado abre
+    no primeiro toque e continua aberto depois de soltar o dedo.
+    """
     def on_touch_down(self, touch):
-        # No Android, o primeiro toque às vezes NÃO abria o teclado (o
-        # ScrollView em volta "segurava" o toque, então era preciso tocar de
-        # novo ou segurar o dedo). Forçar o foco aqui, quando o toque cai
-        # dentro do campo, torna o primeiro toque confiável.
-        if self.collide_point(*touch.pos) and not self.disabled and not self.focus:
-            self.focus = True
+        if self.collide_point(*touch.pos):
+            self._focar_campo_sob_toque(self, touch.pos[0], touch.pos[1])
         return super().on_touch_down(touch)
+
+    def _focar_campo_sob_toque(self, widget, tx, ty):
+        # Procura de cima para baixo o campo de texto sob o toque e o foca.
+        # Usa coordenadas ABSOLUTAS de janela (to_window) para funcionar mesmo
+        # com o conteúdo rolado.
+        for filho in widget.children:
+            if self._focar_campo_sob_toque(filho, tx, ty):
+                return True
+        if isinstance(widget, TextInput) and not widget.disabled:
+            wx, wy = widget.to_window(widget.x, widget.y)
+            if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
+                widget.focus = True
+                return True
+        return False
 
 
 def etiqueta(texto):
@@ -390,7 +410,11 @@ def chip(texto, cor_fundo, cor_texto, icone_nome=None):
     caixa.width = dp(11) * len(texto) + dp(24) + (dp(16) if icone_nome else 0)
     _pintar_fundo(caixa, cor_fundo, raio=13)
     if icone_nome:
-        caixa.add_widget(icone(icone_nome, tamanho="13sp", cor=cor_texto))
+        ic = icone(icone_nome, tamanho="13sp", cor=cor_texto)
+        # Sem isto o ícone (size_hint_y=None) encostava embaixo, ficando mais
+        # baixo que o texto. center_y=0.5 alinha o símbolo ao centro do chip.
+        ic.pos_hint = {"center_y": 0.5}
+        caixa.add_widget(ic)
     lbl = Label(text=texto, markup=True, color=cor_texto, font_size="12sp",
                 bold=True)
     caixa.add_widget(lbl)
@@ -750,7 +774,7 @@ class TelaInicial(Screen):
         raiz.add_widget(cabecalho("VacaVet", "Atendimento por voz no curral",
                                   icone_nome="vaca"))
 
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         corpo = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(16),
                           size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
@@ -853,6 +877,7 @@ class TelaInicial(Screen):
         self._atualizar_propriedades_salvas()
         pendentes = len(database.listar_nao_sincronizados())
         self.caixa_status.clear_widgets()
+        self.caixa_status.add_widget(Widget())  # espaçador à esquerda (centraliza)
         if pendentes:
             self.caixa_status.add_widget(
                 chip("%d aguardando nuvem" % pendentes,
@@ -861,7 +886,7 @@ class TelaInicial(Screen):
             self.caixa_status.add_widget(
                 chip("Tudo sincronizado", CORES["chip_ok"], CORES["verde_escuro"],
                      icone_nome="check_circulo"))
-        self.caixa_status.add_widget(Widget())  # empurra o chip para a esquerda
+        self.caixa_status.add_widget(Widget())  # espaçador à direita (centraliza)
 
     def _atualizar_propriedades_salvas(self):
         self.caixa_propriedades_salvas.clear_widgets()
@@ -903,7 +928,7 @@ class TelaInicial(Screen):
             "Excluir uma fazenda apaga todos os atendimentos dela.",
             cor=CORES["texto_suave"], tamanho="12sp", altura=dp(34)))
 
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         grade = GridLayout(cols=1, size_hint_y=None, spacing=dp(8))
         grade.bind(minimum_height=grade.setter("height"))
         scroll.add_widget(grade)
@@ -1051,7 +1076,7 @@ class TelaAtendimento(Screen):
         raiz.add_widget(cabecalho("Novo Atendimento", "Fale ou digite os dados",
                                   icone_nome="estetoscopio", com_voltar=True))
 
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         corpo = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(14),
                           size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
@@ -1237,7 +1262,7 @@ class TelaHistorico(Screen):
         corpo.add_widget(linha_filtro)
 
         # --- Lista rolável ---
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         self.lista = GridLayout(cols=1, size_hint_y=None, spacing=dp(10),
                                 padding=(0, dp(2)))
         self.lista.bind(minimum_height=self.lista.setter("height"))
@@ -1361,7 +1386,7 @@ class TelaHistorico(Screen):
             (rotulo_icone("vaca", "").rstrip(), id_vaca),
             cor=CORES["verde"], tamanho="16sp", altura=dp(46)))
 
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         grade = GridLayout(cols=1, size_hint_y=None, spacing=dp(8))
         grade.bind(minimum_height=grade.setter("height"))
         scroll.add_widget(grade)
@@ -1470,7 +1495,7 @@ class TelaConfig(Screen):
         raiz.add_widget(cabecalho("Configurações", "Ajuda e modo de operação",
                                   icone_nome="engrenagem", com_voltar=True))
 
-        scroll = ScrollView()
+        scroll = RolagemComCampos()
         corpo = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(14),
                           size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
