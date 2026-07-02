@@ -26,7 +26,6 @@ Telas:
 
 import os
 import shutil
-import threading
 from datetime import datetime
 
 from kivy.config import Config
@@ -355,6 +354,15 @@ class Campo(TextInput):
         kwargs.setdefault("font_size", "16sp")
         super().__init__(**kwargs)
 
+    def on_touch_down(self, touch):
+        # No Android, o primeiro toque às vezes NÃO abria o teclado (o
+        # ScrollView em volta "segurava" o toque, então era preciso tocar de
+        # novo ou segurar o dedo). Forçar o foco aqui, quando o toque cai
+        # dentro do campo, torna o primeiro toque confiável.
+        if self.collide_point(*touch.pos) and not self.disabled and not self.focus:
+            self.focus = True
+        return super().on_touch_down(touch)
+
 
 def etiqueta(texto):
     """Legenda pequena em maiúsculas sobre os campos."""
@@ -523,6 +531,71 @@ def confirmar(titulo, mensagem, ao_confirmar, texto_confirmar="Excluir"):
         ao_confirmar()
     botao_excluir.bind(on_release=_confirmar)
     popup.open()
+
+
+def alternar_gravacao(host, botao, campo, rotulo_idle="GRAVAR E FALAR",
+                      ao_final=None):
+    """Liga/desliga a captação de voz AO VIVO.
+
+    - 1º toque: começa a ouvir; a transcrição vai aparecendo no `campo`
+      enquanto a pessoa fala (resultados parciais).
+    - 2º toque (ou fim automático): para a captação.
+
+    Guarda a sessão em host._sessao_audio para saber se está ouvindo. É usado
+    tanto na "nota rápida" (tela inicial) quanto no atendimento.
+    """
+    sessao = getattr(host, "_sessao_audio", None)
+    if sessao is not None:
+        # Já está ouvindo: este toque é o "Parar".
+        try:
+            sessao.parar()
+        except Exception:
+            pass
+        return
+
+    def _repor_botao(*_):
+        botao.text = rotulo_icone("microfone", rotulo_idle)
+        botao._cor = CORES["terracota"]
+        botao._c.rgba = CORES["terracota"]
+
+    def on_parcial(texto):
+        Clock.schedule_once(lambda *_: setattr(campo, "text", texto))
+
+    def on_final(texto):
+        texto = (texto or "").strip()
+        if texto:
+            texto = ai_analyzer.corrigir_transcricao(texto)
+
+        def _ui(*_):
+            host._sessao_audio = None
+            _repor_botao()
+            if texto:
+                campo.text = texto
+                if ao_final:
+                    ao_final(texto)
+        Clock.schedule_once(_ui)
+
+    def on_erro(codigo):
+        def _ui(*_):
+            host._sessao_audio = None
+            _repor_botao()
+            aviso("Áudio", audio_processor.mensagem_erro_audio(codigo))
+        Clock.schedule_once(_ui)
+
+    try:
+        host._sessao_audio = audio_processor.iniciar_transcricao_ao_vivo(
+            callback_parcial=on_parcial, callback_final=on_final,
+            callback_erro=on_erro)
+    except Exception as erro:
+        host._sessao_audio = None
+        aviso("Áudio", "Não foi possível iniciar a captação de voz. Você "
+              "pode digitar o texto manualmente.\n\n(%s)" % erro)
+        return
+
+    campo.text = ""
+    botao.text = rotulo_icone("fone", "OUVINDO — TOQUE PARA PARAR")
+    botao._cor = CORES["verde"]
+    botao._c.rgba = CORES["verde"]
 
 
 # ===========================================================================
@@ -903,40 +976,20 @@ class TelaInicial(Screen):
             self.campo_propriedade.text = ""
 
     def gravar_nota(self, *_):
-        """Grava e transcreve um lembrete rápido na tela inicial (mesma
-        engine de voz do atendimento: ao vivo com Vosk, ou Google como reserva)."""
-        ao_vivo = audio_processor.vosk_disponivel()
-        rotulo_ouvindo = ("Ouvindo... vai escrevendo..." if ao_vivo
-                          else "Ouvindo... fale agora")
-        self.botao_gravar_nota.text = rotulo_icone("fone", rotulo_ouvindo)
-        self.botao_gravar_nota.disabled = True
-        self.nota_transcricao.text = ""
+        """Liga/desliga a captação de voz ao vivo do lembrete rápido: o texto
+        aparece enquanto se fala; tocar de novo para a captação."""
+        alternar_gravacao(self, self.botao_gravar_nota, self.nota_transcricao,
+                          rotulo_idle="GRAVAR E FALAR")
 
-        def atualizar_ao_vivo(texto_parcial):
-            Clock.schedule_once(lambda *_: setattr(self.nota_transcricao,
-                                                   "text", texto_parcial))
-
-        def tarefa():
-            if ao_vivo:
-                texto = audio_processor.transcrever_streaming_do_microfone(
-                    callback_parcial=atualizar_ao_vivo)
-            else:
-                texto = audio_processor.transcrever_do_microfone()
-            if texto:
-                texto = ai_analyzer.corrigir_transcricao(texto)
-
-            def atualizar(*_):
-                self.botao_gravar_nota.text = rotulo_icone("microfone",
-                                                           "GRAVAR E FALAR")
-                self.botao_gravar_nota.disabled = False
-                if texto:
-                    self.nota_transcricao.text = texto
-                else:
-                    aviso("Áudio", "Não consegui captar. Você pode digitar "
-                          "o lembrete manualmente.")
-            Clock.schedule_once(atualizar)
-
-        threading.Thread(target=tarefa, daemon=True).start()
+    def on_leave(self):
+        # Se sair da tela ouvindo, cancela a captação para não ficar pendurada.
+        sessao = getattr(self, "_sessao_audio", None)
+        if sessao is not None:
+            try:
+                sessao.cancelar()
+            except Exception:
+                pass
+            self._sessao_audio = None
 
     def _adicionar_propriedade(self):
         """Cadastra a fazenda escrita no campo como um "quadrado" selecionável
@@ -1099,42 +1152,20 @@ class TelaAtendimento(Screen):
         self.seletor_diagnostico.selecionar("", disparar_callback=False)
 
     def gravar(self, *_):
-        ao_vivo = audio_processor.vosk_disponivel()
-        rotulo_ouvindo = "Ouvindo... vai escrevendo..." if ao_vivo else "Ouvindo... fale agora"
-        self.botao_gravar.text = rotulo_icone("fone", rotulo_ouvindo)
-        self.botao_gravar.disabled = True
-        self.transcricao.text = ""
+        """Liga/desliga a captação ao vivo do atendimento. Ao terminar,
+        preenche os campos automaticamente a partir da fala."""
+        alternar_gravacao(self, self.botao_gravar, self.transcricao,
+                          rotulo_idle="GRAVAR E FALAR",
+                          ao_final=lambda _t: self.analisar_texto())
 
-        def atualizar_ao_vivo(texto_parcial):
-            # roda numa thread de áudio — precisa voltar pra thread da UI
-            Clock.schedule_once(lambda *_: setattr(self.transcricao, "text",
-                                                    texto_parcial))
-
-        def tarefa():
-            if ao_vivo:
-                texto = audio_processor.transcrever_streaming_do_microfone(
-                    callback_parcial=atualizar_ao_vivo)
-            else:
-                texto = audio_processor.transcrever_do_microfone()
-
-            # Correção final: troca palavras que provavelmente saíram erradas
-            # do reconhecimento pela grafia mais próxima que o app conhece.
-            if texto:
-                texto = ai_analyzer.corrigir_transcricao(texto)
-
-            def atualizar(*_):
-                self.botao_gravar.text = rotulo_icone("microfone", "GRAVAR E FALAR")
-                self.botao_gravar.disabled = False
-                if texto:
-                    self.transcricao.text = texto
-                    self.analisar_texto()
-                else:
-                    aviso("Áudio", "Não consegui captar. Você pode digitar a "
-                          "frase manualmente e clicar em 'Preencher campos'.")
-
-            Clock.schedule_once(atualizar)
-
-        threading.Thread(target=tarefa, daemon=True).start()
+    def on_leave(self):
+        sessao = getattr(self, "_sessao_audio", None)
+        if sessao is not None:
+            try:
+                sessao.cancelar()
+            except Exception:
+                pass
+            self._sessao_audio = None
 
     def analisar_texto(self, *_):
         texto = self.transcricao.text.strip()
@@ -1453,10 +1484,11 @@ class TelaConfig(Screen):
         cabeca.add_widget(chip("GRÁTIS", CORES["chip_ok"], CORES["verde_escuro"]))
         atual.add_widget(cabeca)
         atual.add_widget(texto_livre(
-            "• Transcrição pelo reconhecimento gratuito do Google Web.\n"
+            "• Voz ao vivo pelo reconhecimento do próprio Android (funciona "
+            "offline se o pacote de voz em português estiver instalado).\n"
             "• Preenchimento por regras locais em português.\n"
             "• Dados salvos apenas neste aparelho (SQLite).",
-            cor=CORES["texto_suave"], tamanho="13sp", altura=dp(66)))
+            cor=CORES["texto_suave"], tamanho="13sp", altura=dp(90)))
         corpo.add_widget(atual)
 
         # Cartão aparência (tema claro/escuro)
@@ -1556,7 +1588,10 @@ class AppVeterinaria(App):
            usuário veja o diálogo de permissão do sistema.
         """
         try:
-            Window.softinput_mode = "below_target"
+            # 'pan' empurra a janela inteira para cima quando o teclado abre,
+            # sem refazer o layout (o 'below_target' fazia um relayout que às
+            # vezes tirava o foco do campo — sensação de "a barra volta atrás").
+            Window.softinput_mode = "pan"
         except Exception:
             pass
 

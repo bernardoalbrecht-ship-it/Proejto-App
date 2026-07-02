@@ -34,65 +34,235 @@ def _no_android() -> bool:
     return "ANDROID_ARGUMENT" in os.environ
 
 
+# ===========================================================================
+# TRANSCRIÇÃO AO VIVO — API única usada pela interface
 # ---------------------------------------------------------------------------
-# ANDROID — reconhecimento de voz NATIVO (RecognizerIntent)
-# ---------------------------------------------------------------------------
-def _transcrever_android(timeout: float = 60.0) -> str:
-    """Usa o reconhecimento de voz nativo do Android: abre o diálogo "Fale
-    agora" do sistema e devolve o texto reconhecido.
+# iniciar_transcricao_ao_vivo(...) começa a ouvir e devolve uma "sessão" com
+# um método .parar(). Enquanto ouve, chama callback_parcial(texto) várias
+# vezes (legenda ao vivo) e, ao terminar, callback_final(texto). Se algo der
+# errado, callback_erro(codigo_ou_mensagem).
+#
+#   • No ANDROID: usa android.speech.SpeechRecognizer (motor do sistema), com
+#     resultados PARCIAIS (ao vivo) e preferência OFFLINE quando o pacote de
+#     voz em português está instalado no aparelho.
+#   • No DESKTOP: usa o Vosk (offline) numa thread, com um sinal de parada.
+# ===========================================================================
 
-    Vantagens: já vem no aparelho (app de voz do Google), pede a permissão de
-    microfone sozinho e não precisa de bibliotecas nativas extras no build.
-    Requer internet. Bloqueia a thread chamadora até o resultado chegar (é
-    chamado a partir de uma thread de trabalho na interface).
-    """
-    from jnius import autoclass
-    from android import activity  # fornecido pelo python-for-android
+# Mantém referências vivas dos objetos Java enquanto a gravação acontece
+# (o coletor de lixo do Python não pode recolher o listener no meio do uso).
+_SESSAO_ATIVA = None
+
+
+def mensagem_erro_audio(codigo) -> str:
+    """Traduz o código de erro do SpeechRecognizer do Android (int) numa
+    explicação em português. Para o desktop, o 'codigo' já é um texto."""
+    mapa = {
+        1: "O reconhecimento demorou demais (rede lenta). Tente de novo.",
+        2: "Sem conexão com a internet. Conecte-se ou instale o pacote de "
+           "voz offline em português (Config. do Android > Idiomas/Voz).",
+        3: "Não consegui acessar o microfone. Verifique a permissão do app.",
+        4: "O servidor de reconhecimento falhou. Tente novamente.",
+        5: "Erro interno do reconhecimento. Tente novamente.",
+        6: "Não ouvi nenhuma fala. Toque em gravar e fale mais perto.",
+        7: "Não entendi o que foi dito. Pode repetir?",
+        8: "O reconhecimento está ocupado. Aguarde um instante e tente de novo.",
+        9: "Faltou a permissão de microfone. Autorize o app nas configurações.",
+        11: "O serviço de voz desconectou. Tente novamente.",
+        12: "Idioma não suportado neste aparelho.",
+        13: "O pacote de voz em português não está instalado para uso "
+            "offline. Instale-o em Config. do Android (Voz/Assistente) ou "
+            "conecte-se à internet.",
+    }
+    if isinstance(codigo, int):
+        return mapa.get(codigo, "Não consegui captar o áudio (erro %d)." % codigo)
+    return str(codigo) or "Não consegui captar o áudio."
+
+
+def iniciar_transcricao_ao_vivo(callback_parcial=None, callback_final=None,
+                                callback_erro=None, preferir_offline=True):
+    """Começa a ouvir o microfone e transcrever AO VIVO. Devolve uma sessão
+    com .parar() para encerrar a captação (botão 'Parar')."""
+    global _SESSAO_ATIVA
+    if _no_android():
+        _SESSAO_ATIVA = _iniciar_desktop(callback_parcial, callback_final,
+                                         callback_erro)
+    else:
+        _SESSAO_ATIVA = _iniciar_android(callback_parcial, callback_final,
+                                         callback_erro, preferir_offline)
+    return _SESSAO_ATIVA
+
+
+# ---------------------------------------------------------------------------
+# ANDROID — SpeechRecognizer (ao vivo, com preferência offline)
+# ---------------------------------------------------------------------------
+def _iniciar_android(callback_parcial, callback_final, callback_erro,
+                     preferir_offline):
+    from jnius import autoclass, PythonJavaClass, java_method
     from android.runnable import run_on_ui_thread
 
-    PythonActivity = autoclass("org.kivy.android.PythonActivity")
-    Intent = autoclass("android.content.Intent")
+    SpeechRecognizer = autoclass("android.speech.SpeechRecognizer")
     RecognizerIntent = autoclass("android.speech.RecognizerIntent")
+    Intent = autoclass("android.content.Intent")
+    PythonActivity = autoclass("org.kivy.android.PythonActivity")
 
-    REQUEST_CODE = 0x5645  # identificador do nosso pedido ("VE")
-    RESULT_OK = -1         # android.app.Activity.RESULT_OK
-    resultado = {"texto": ""}
-    pronto = threading.Event()
+    RESULTS = SpeechRecognizer.RESULTS_RECOGNITION
 
-    def _on_result(request_code, result_code, intent):
-        if request_code != REQUEST_CODE:
-            return
+    def _texto_do_bundle(bundle):
         try:
-            if result_code == RESULT_OK and intent is not None:
-                extras = intent.getStringArrayListExtra(
-                    RecognizerIntent.EXTRA_RESULTS)
-                if extras is not None and extras.size() > 0:
-                    resultado["texto"] = extras.get(0)
-        finally:
-            pronto.set()
-
-    activity.bind(on_activity_result=_on_result)
-
-    @run_on_ui_thread
-    def _abrir_dialogo():
-        intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.IDIOMA)
-        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
-                        "Fale o atendimento")
-        PythonActivity.mActivity.startActivityForResult(intent, REQUEST_CODE)
-
-    try:
-        _abrir_dialogo()
-        pronto.wait(timeout)
-    finally:
-        try:
-            activity.unbind(on_activity_result=_on_result)
+            lista = bundle.getStringArrayList(RESULTS)
+            if lista is not None and lista.size() > 0:
+                return lista.get(0)
         except Exception:
             pass
+        return ""
 
-    return (resultado["texto"] or "").strip()
+    class _Listener(PythonJavaClass):
+        __javainterfaces__ = ["android/speech/RecognitionListener"]
+        __javacontext__ = "app"
+
+        @java_method("(Landroid/os/Bundle;)V")
+        def onPartialResults(self, results):
+            if callback_parcial:
+                texto = _texto_do_bundle(results)
+                if texto:
+                    callback_parcial(texto)
+
+        @java_method("(Landroid/os/Bundle;)V")
+        def onResults(self, results):
+            if callback_final:
+                callback_final(_texto_do_bundle(results))
+
+        @java_method("(I)V")
+        def onError(self, erro):
+            if callback_erro:
+                callback_erro(int(erro))
+
+        # métodos obrigatórios da interface (não precisamos deles) --------
+        @java_method("(Landroid/os/Bundle;)V")
+        def onReadyForSpeech(self, params):
+            pass
+
+        @java_method("()V")
+        def onBeginningOfSpeech(self):
+            pass
+
+        @java_method("(F)V")
+        def onRmsChanged(self, rmsdB):
+            pass
+
+        @java_method("([B)V")
+        def onBufferReceived(self, buffer):
+            pass
+
+        @java_method("()V")
+        def onEndOfSpeech(self):
+            pass
+
+        @java_method("(ILandroid/os/Bundle;)V")
+        def onEvent(self, eventType, params):
+            pass
+
+    class _SessaoAndroid:
+        def __init__(self):
+            self._recognizer = None
+            self._listener = _Listener()
+
+        def _criar_intent(self):
+            intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.IDIOMA)
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, True)
+            # Modo ditado: não corta no primeiro silêncio curto.
+            intent.putExtra("android.speech.extra.DICTATION_MODE", True)
+            if preferir_offline:
+                try:
+                    intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, True)
+                except Exception:
+                    pass
+            return intent
+
+        @run_on_ui_thread
+        def iniciar(self):
+            if not SpeechRecognizer.isRecognitionAvailable(
+                    PythonActivity.mActivity):
+                if callback_erro:
+                    callback_erro("Este aparelho não tem reconhecimento de "
+                                  "voz do Google. Digite o texto à mão.")
+                return
+            self._recognizer = SpeechRecognizer.createSpeechRecognizer(
+                PythonActivity.mActivity)
+            self._recognizer.setRecognitionListener(self._listener)
+            self._recognizer.startListening(self._criar_intent())
+
+        @run_on_ui_thread
+        def parar(self):
+            if self._recognizer is not None:
+                try:
+                    self._recognizer.stopListening()
+                except Exception:
+                    pass
+
+        @run_on_ui_thread
+        def cancelar(self):
+            if self._recognizer is not None:
+                try:
+                    self._recognizer.cancel()
+                    self._recognizer.destroy()
+                except Exception:
+                    pass
+                self._recognizer = None
+
+    sessao = _SessaoAndroid()
+    sessao.iniciar()
+    return sessao
+
+
+# ---------------------------------------------------------------------------
+# DESKTOP — Vosk offline numa thread, com sinal de parada
+# ---------------------------------------------------------------------------
+class _SessaoDesktop:
+    def __init__(self, parar_flag):
+        self._parar = parar_flag
+
+    def parar(self):
+        self._parar.set()
+
+    def cancelar(self):
+        self._parar.set()
+
+
+def _iniciar_desktop(callback_parcial, callback_final, callback_erro):
+    parar_flag = threading.Event()
+
+    def tarefa():
+        try:
+            if _vosk_desktop_disponivel():
+                texto = transcrever_streaming_do_microfone(
+                    callback_parcial=callback_parcial, parar_flag=parar_flag)
+            else:
+                texto = _transcrever_gratuito(15)
+                if texto and callback_parcial:
+                    callback_parcial(texto)
+        except Exception as erro:
+            if callback_erro:
+                callback_erro(str(erro))
+            texto = ""
+        if callback_final:
+            callback_final(texto or "")
+
+    threading.Thread(target=tarefa, daemon=True).start()
+    return _SessaoDesktop(parar_flag)
+
+
+def _vosk_desktop_disponivel() -> bool:
+    if not config.USAR_VOSK_TEMPO_REAL:
+        return False
+    try:
+        import vosk  # noqa: F401
+    except ImportError:
+        return False
+    return config.VOSK_MODEL_PATH.is_dir()
 
 
 def vosk_disponivel() -> bool:
@@ -126,8 +296,6 @@ def transcrever_do_microfone(duracao_maxima: int = 15) -> str:
     vivo). Mantido para compatibilidade e como reserva de última instância.
     Retorna string vazia se não conseguir (sem microfone, sem internet, etc.).
     """
-    if _no_android():
-        return _transcrever_android()
     if config.USAR_GOOGLE_CLOUD_SPEECH:
         return _transcrever_google_cloud()
     return _transcrever_gratuito(duracao_maxima)
@@ -135,7 +303,8 @@ def transcrever_do_microfone(duracao_maxima: int = 15) -> str:
 
 def transcrever_streaming_do_microfone(callback_parcial=None,
                                        duracao_maxima: int = 20,
-                                       silencio_para_parar: float = 2.2) -> str:
+                                       silencio_para_parar: float = 2.2,
+                                       parar_flag=None) -> str:
     """
     Transcreve AO VIVO usando o Vosk (offline): a cada pedacinho de áudio
     reconhecido, chama callback_parcial(texto_ate_agora) — dá pra usar isso
@@ -146,12 +315,9 @@ def transcrever_streaming_do_microfone(callback_parcial=None,
     que esperar sempre o tempo máximo).
 
     Retorna o texto final reconhecido (string vazia se nada foi entendido).
+    Se `parar_flag` (threading.Event) for passado, encerra assim que ele for
+    setado — é assim que o botão "Parar" interrompe a captação no desktop.
     """
-    if _no_android():
-        # No celular não há streaming ao vivo; usa o diálogo nativo e devolve
-        # o texto final de uma vez.
-        return _transcrever_android()
-
     import pyaudio
 
     modelo = _carregar_modelo_vosk()
@@ -171,6 +337,8 @@ def transcrever_streaming_do_microfone(callback_parcial=None,
 
     try:
         while True:
+            if parar_flag is not None and parar_flag.is_set():
+                break
             agora = time.time()
             if agora - inicio > duracao_maxima:
                 break
