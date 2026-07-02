@@ -1,7 +1,7 @@
 [app]
 
 # Nome que aparece no celular
-title = Atendimento Veterinario
+title = VetSheets
 
 # Nome do pacote (sem espaços, sem acentos)
 package.name = atendimentovet

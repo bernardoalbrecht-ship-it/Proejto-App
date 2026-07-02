@@ -87,7 +87,7 @@ def _requisicao(url, token, metodo="GET", corpo=None):
 
 
 def _nome_planilha(propriedade: str) -> str:
-    return "VacaVet - %s" % (propriedade or "Sem nome").strip()
+    return "VetSheets - %s" % (propriedade or "Sem nome").strip()
 
 
 def _link_planilha(planilha_id: str) -> str:
