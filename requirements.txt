@@ -1,0 +1,33 @@
+# ============================================================
+# DEPENDÊNCIAS DO SISTEMA VETERINÁRIO
+# ============================================================
+# Instale tudo com:  pip install -r requirements.txt
+# ============================================================
+
+# ---- OBRIGATÓRIAS (modo de teste, gratuito) ----
+kivy==2.3.0                 # interface gráfica (Windows/Android)
+SpeechRecognition==3.10.4   # transcrição gratuita (Google Web)
+openpyxl==3.1.5             # leitura/escrita de Excel
+setuptools                  # fornece o módulo 'distutils' que o SpeechRecognition
+                             # ainda usa e que foi removido do Python 3.12+
+
+# ---- ÁUDIO (para o microfone funcionar) ----
+# No Windows normalmente instala direto. No Linux pode precisar de:
+#   sudo apt-get install portaudio19-dev
+PyAudio==0.2.14
+
+# ---- TRANSCRIÇÃO AO VIVO (offline, gratuita) ----
+# Vosk faz a frase aparecer na tela enquanto você fala. O modelo em
+# português (~50MB) já vem em assets/vosk/ — não precisa baixar nada.
+vosk==0.3.45
+
+# ---- OPCIONAIS (só se ativar a nuvem no config.py) ----
+# Descomente conforme for usar:
+# google-cloud-speech==2.27.0        # transcrição paga (Google Cloud)
+# gspread==6.1.2                     # Google Sheets
+# google-auth==2.34.0                # autenticação Google
+# google-auth-oauthlib==1.2.1        # login OAuth Google
+# openai==1.51.0                     # análise com GPT (paga)
+
+# ---- PARA GERAR O .EXE (Windows) ----
+# pyinstaller==6.10.0

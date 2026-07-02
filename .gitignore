@@ -1,0 +1,16 @@
+# Dados locais e sensíveis — NÃO sobem para o GitHub
+dados/
+credenciais/
+*.db
+
+# Artefatos de build
+.buildozer/
+bin/
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+build.log
+*.log
