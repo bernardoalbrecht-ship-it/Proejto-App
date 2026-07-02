@@ -1526,6 +1526,9 @@ class AppVeterinaria(App):
             Window.size = (400, 760)
             Window.minimum_width, Window.minimum_height = 360, 620
 
+        if platform == "android":
+            self._preparar_android()
+
         database.inicializar_banco()   # garante que o banco existe
 
         gerenciador = ScreenManager(transition=FadeTransition(duration=0.18))
@@ -1537,6 +1540,33 @@ class AppVeterinaria(App):
         gerenciador.add_widget(TelaConfig(name="config"))
         gerenciador.current = "splash"
         return gerenciador
+
+    def _preparar_android(self):
+        """Ajustes que só fazem sentido no celular:
+
+        1) TECLADO: por padrão o Kivy não reposiciona a tela quando o teclado
+           do Android abre, então ele cobria o campo e dava a sensação de que
+           "a barra de digitação voltava atrás" (era preciso segurar o dedo).
+           'below_target' faz a janela rolar para manter o campo em foco logo
+           acima do teclado.
+
+        2) PERMISSÕES: declarar RECORD_AUDIO no manifesto não basta a partir do
+           Android 6; é preciso PEDIR em tempo de execução. Sem isso o app nem
+           conseguia "ligar" o microfone. Pedimos ao abrir, de forma que o
+           usuário veja o diálogo de permissão do sistema.
+        """
+        try:
+            Window.softinput_mode = "below_target"
+        except Exception:
+            pass
+
+        try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.RECORD_AUDIO,
+                                 Permission.INTERNET])
+        except Exception:
+            # Ambiente sem o módulo 'android' (ex.: rodando fora do APK): ignora.
+            pass
 
     def reconstruir_telas(self, tela_atual="config"):
         """Recria todas as telas do zero para que peguem as cores atuais de

@@ -42,8 +42,8 @@ android.api = 33
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 
-# Ícone (coloque um arquivo icon.png na raiz se quiser personalizar)
-# icon.filename = %(source.dir)s/icon.png
+# Ícone do app: círculo verde da marca com o símbolo da vaca (mesmo do splash).
+icon.filename = %(source.dir)s/icon.png
 
 [buildozer]
 log_level = 2
