@@ -18,6 +18,8 @@ Modos disponíveis, em ordem de preferência:
 """
 
 import json
+import os
+import threading
 import time
 
 from backend import config
@@ -25,9 +27,81 @@ from backend import config
 _MODELO_VOSK = None  # cache: o modelo só é carregado uma vez por execução
 
 
+def _no_android() -> bool:
+    """True quando o código está rodando dentro do APK (python-for-android
+    define a variável de ambiente ANDROID_ARGUMENT). Serve para escolher o
+    caminho de áudio nativo do celular em vez do pyaudio/vosk do desktop."""
+    return "ANDROID_ARGUMENT" in os.environ
+
+
+# ---------------------------------------------------------------------------
+# ANDROID — reconhecimento de voz NATIVO (RecognizerIntent)
+# ---------------------------------------------------------------------------
+def _transcrever_android(timeout: float = 60.0) -> str:
+    """Usa o reconhecimento de voz nativo do Android: abre o diálogo "Fale
+    agora" do sistema e devolve o texto reconhecido.
+
+    Vantagens: já vem no aparelho (app de voz do Google), pede a permissão de
+    microfone sozinho e não precisa de bibliotecas nativas extras no build.
+    Requer internet. Bloqueia a thread chamadora até o resultado chegar (é
+    chamado a partir de uma thread de trabalho na interface).
+    """
+    from jnius import autoclass
+    from android import activity  # fornecido pelo python-for-android
+    from android.runnable import run_on_ui_thread
+
+    PythonActivity = autoclass("org.kivy.android.PythonActivity")
+    Intent = autoclass("android.content.Intent")
+    RecognizerIntent = autoclass("android.speech.RecognizerIntent")
+
+    REQUEST_CODE = 0x5645  # identificador do nosso pedido ("VE")
+    RESULT_OK = -1         # android.app.Activity.RESULT_OK
+    resultado = {"texto": ""}
+    pronto = threading.Event()
+
+    def _on_result(request_code, result_code, intent):
+        if request_code != REQUEST_CODE:
+            return
+        try:
+            if result_code == RESULT_OK and intent is not None:
+                extras = intent.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS)
+                if extras is not None and extras.size() > 0:
+                    resultado["texto"] = extras.get(0)
+        finally:
+            pronto.set()
+
+    activity.bind(on_activity_result=_on_result)
+
+    @run_on_ui_thread
+    def _abrir_dialogo():
+        intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.IDIOMA)
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                        "Fale o atendimento")
+        PythonActivity.mActivity.startActivityForResult(intent, REQUEST_CODE)
+
+    try:
+        _abrir_dialogo()
+        pronto.wait(timeout)
+    finally:
+        try:
+            activity.unbind(on_activity_result=_on_result)
+        except Exception:
+            pass
+
+    return (resultado["texto"] or "").strip()
+
+
 def vosk_disponivel() -> bool:
     """Verifica (sem carregar o modelo inteiro) se dá pra usar transcrição
     ao vivo: precisa do pacote instalado E do modelo baixado."""
+    if _no_android():
+        # No celular usamos o reconhecimento nativo do Android (diálogo do
+        # sistema), que não é "ao vivo" — então o app usa o caminho comum.
+        return False
     if not config.USAR_VOSK_TEMPO_REAL:
         return False
     try:
@@ -52,6 +126,8 @@ def transcrever_do_microfone(duracao_maxima: int = 15) -> str:
     vivo). Mantido para compatibilidade e como reserva de última instância.
     Retorna string vazia se não conseguir (sem microfone, sem internet, etc.).
     """
+    if _no_android():
+        return _transcrever_android()
     if config.USAR_GOOGLE_CLOUD_SPEECH:
         return _transcrever_google_cloud()
     return _transcrever_gratuito(duracao_maxima)
@@ -71,6 +147,11 @@ def transcrever_streaming_do_microfone(callback_parcial=None,
 
     Retorna o texto final reconhecido (string vazia se nada foi entendido).
     """
+    if _no_android():
+        # No celular não há streaming ao vivo; usa o diálogo nativo e devolve
+        # o texto final de uma vez.
+        return _transcrever_android()
+
     import pyaudio
 
     modelo = _carregar_modelo_vosk()
