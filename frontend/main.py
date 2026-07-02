@@ -39,6 +39,7 @@ from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
@@ -366,22 +367,132 @@ class RolagemComCampos(ScrollView):
     """
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            self._focar_campo_sob_toque(self, touch.pos[0], touch.pos[1])
+            campo = self._campo_sob_toque(self, touch.pos[0], touch.pos[1])
+            if campo is not None:
+                campo.focus = True
+                # Entrega o toque DIRETO ao campo (para posicionar o cursor)
+                # e CONSOME o evento (return True). Assim o ScrollView nunca
+                # "segura" e redistribui esse toque — era essa redistribuição,
+                # na hora de soltar o dedo, que tirava o foco do campo e
+                # fechava o teclado no Android.
+                touch.push()
+                touch.apply_transform_2d(self.to_local)
+                try:
+                    campo.on_touch_down(touch)
+                finally:
+                    touch.pop()
+                return True
         return super().on_touch_down(touch)
 
-    def _focar_campo_sob_toque(self, widget, tx, ty):
-        # Procura de cima para baixo o campo de texto sob o toque e o foca.
+    def _campo_sob_toque(self, widget, tx, ty):
+        # Procura de cima para baixo o campo de texto sob o toque.
         # Usa coordenadas ABSOLUTAS de janela (to_window) para funcionar mesmo
-        # com o conteúdo rolado.
+        # com o conteúdo rolado. Retorna o próprio campo (ou None).
         for filho in widget.children:
-            if self._focar_campo_sob_toque(filho, tx, ty):
-                return True
+            achado = self._campo_sob_toque(filho, tx, ty)
+            if achado is not None:
+                return achado
         if isinstance(widget, TextInput) and not widget.disabled:
             wx, wy = widget.to_window(widget.x, widget.y)
             if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
-                widget.focus = True
-                return True
-        return False
+                return widget
+        return None
+
+
+class BotaoGravarRedondo(Widget):
+    """Botão de gravação estilo "câmera de vídeo": um CÍRCULO vermelho que,
+    ao começar a gravar, vira um QUADRADO (toque para parar).
+
+    Duas decisões importantes para funcionar bem no Android:
+    1. Ele reage no on_touch_down — no instante em que o dedo ENCOSTA na
+       tela — e não no on_release. Dentro de um ScrollView, o "soltar" pode
+       não chegar direito ao widget (o ScrollView segura o toque para decidir
+       se é rolagem); era por isso que o botão antigo só respondia com o
+       dedo preso na tela.
+    2. Ele retorna True ao tratar o toque (consome o evento): o ScrollView
+       não tenta rolar nem redistribuir esse toque depois.
+    """
+    def __init__(self, ao_tocar=None, diametro=dp(76), **kwargs):
+        kwargs.setdefault("size_hint", (None, None))
+        super().__init__(**kwargs)
+        self.size = (diametro, diametro)
+        self._ao_tocar = ao_tocar
+        self._gravando = False
+        with self.canvas:
+            # Anel externo (contorno), sempre visível
+            self._cor_anel = Color(*CORES["borda"])
+            self._anel = Line(width=dp(2.5))
+            # Miolo: círculo vermelho (parado) OU quadrado vermelho (gravando)
+            self._cor_miolo = Color(*CORES["terracota"])
+            self._miolo = RoundedRectangle(radius=[diametro / 2.0])
+        self.bind(pos=self._att, size=self._att)
+        self._att()
+
+    def _att(self, *_):
+        x, y = self.pos
+        w, h = self.size
+        self._anel.circle = (x + w / 2.0, y + h / 2.0, w / 2.0 - dp(2))
+        if self._gravando:
+            # QUADRADO menor, centralizado (símbolo de "parar")
+            lado = w * 0.42
+            self._miolo.pos = (x + (w - lado) / 2.0, y + (h - lado) / 2.0)
+            self._miolo.size = (lado, lado)
+            self._miolo.radius = [dp(6)]
+        else:
+            # CÍRCULO preenchendo quase todo o anel
+            margem = dp(8)
+            self._miolo.pos = (x + margem, y + margem)
+            self._miolo.size = (w - 2 * margem, h - 2 * margem)
+            self._miolo.radius = [(w - 2 * margem) / 2.0]
+
+    def set_gravando(self, gravando):
+        self._gravando = bool(gravando)
+        self._att()
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self._ao_tocar is not None:
+                self._ao_tocar(self)
+            return True
+        return super().on_touch_down(touch)
+
+
+class ControleGravacao(BoxLayout):
+    """Botão redondo de gravar + legenda embaixo.
+
+    A legenda alterna entre o rótulo de repouso (ex.: "GRAVAR E FALAR") e
+    "OUVINDO — TOQUE PARA PARAR". Use set_estado(True/False) para trocar o
+    visual (círculo <-> quadrado) e o texto de uma vez só.
+    """
+    def __init__(self, ao_tocar=None, rotulo="GRAVAR E FALAR", **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(112))
+        kwargs.setdefault("spacing", dp(6))
+        super().__init__(**kwargs)
+        self._rotulo_idle = rotulo
+
+        centro = AnchorLayout(anchor_x="center", anchor_y="center",
+                              size_hint_y=None, height=dp(84))
+        self.botao = BotaoGravarRedondo(ao_tocar=ao_tocar)
+        centro.add_widget(self.botao)
+        self.add_widget(centro)
+
+        self.rotulo = Label(text=rotulo, markup=True, bold=True,
+                            color=CORES["texto"], font_size="13sp",
+                            size_hint_y=None, height=dp(20),
+                            halign="center", valign="middle")
+        self.rotulo.bind(size=self.rotulo.setter("text_size"))
+        self.add_widget(self.rotulo)
+
+    def set_estado(self, gravando):
+        self.botao.set_gravando(gravando)
+        if gravando:
+            self.rotulo.text = "OUVINDO — TOQUE PARA PARAR"
+            self.rotulo.color = CORES["verde"]
+        else:
+            self.rotulo.text = self._rotulo_idle
+            self.rotulo.color = CORES["texto"]
 
 
 def etiqueta(texto):
@@ -578,9 +689,7 @@ def alternar_gravacao(host, botao, campo, rotulo_idle="GRAVAR E FALAR",
         return
 
     def _repor_botao(*_):
-        botao.text = rotulo_icone("microfone", rotulo_idle)
-        botao._cor = CORES["terracota"]
-        botao._c.rgba = CORES["terracota"]
+        botao.set_estado(False)
 
     def on_parcial(texto):
         Clock.schedule_once(lambda *_: setattr(campo, "text", texto))
@@ -617,9 +726,7 @@ def alternar_gravacao(host, botao, campo, rotulo_idle="GRAVAR E FALAR",
         return
 
     campo.text = ""
-    botao.text = rotulo_icone("fone", "OUVINDO — TOQUE PARA PARAR")
-    botao._cor = CORES["verde"]
-    botao._c.rgba = CORES["verde"]
+    botao.set_estado(True)
 
 
 # ===========================================================================
@@ -641,7 +748,7 @@ class TelaSplash(Screen):
         simbolo.bind(size=simbolo.setter("text_size"))
         raiz.add_widget(simbolo)
 
-        nome = Label(text="[b]VacaVet[/b]", markup=True, font_size="32sp",
+        nome = Label(text="[b]VetSheets[/b]", markup=True, font_size="32sp",
                     color=(1, 1, 1, 1), size_hint_y=None, height=dp(46),
                     halign="center", valign="middle")
         nome.bind(size=nome.setter("text_size"))
@@ -697,7 +804,7 @@ class TelaLogin(Screen):
             simbolo.font_name = FONTE_ICONES
         simbolo.bind(size=simbolo.setter("text_size"))
         topo.add_widget(simbolo)
-        nome = Label(text="[b]VacaVet[/b]", markup=True, font_size="30sp",
+        nome = Label(text="[b]VetSheets[/b]", markup=True, font_size="30sp",
                      color=(1, 1, 1, 1), size_hint_y=None, height=dp(42),
                      halign="center", valign="middle")
         nome.bind(size=nome.setter("text_size"))
@@ -770,7 +877,7 @@ class TelaLogin(Screen):
 
         aviso("Login com Google",
               "Vou abrir o navegador para você entrar na sua conta Google e "
-              "autorizar. Depois de autorizar, volte para o VacaVet.")
+              "autorizar. Depois de autorizar, volte para o VetSheets.")
 
         def ao_sucesso(email):
             def _ui(*_):
@@ -797,7 +904,7 @@ class TelaInicial(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         raiz = pagina()
-        raiz.add_widget(cabecalho("VacaVet", "Atendimento por voz no curral",
+        raiz.add_widget(cabecalho("VetSheets", "Atendimento por voz no curral",
                                   icone_nome="vaca"))
 
         scroll = RolagemComCampos()
@@ -819,11 +926,8 @@ class TelaInicial(Screen):
         nota.add_widget(texto_livre(
             "Grave um lembrete do que precisa ser feito — ele é transcrito aqui.",
             cor=CORES["texto_suave"], tamanho="12sp", altura=dp(34)))
-        self.botao_gravar_nota = Botao(
-            texto=rotulo_icone("microfone", "GRAVAR E FALAR"),
-            cor=CORES["terracota"], size_hint_y=None, height=dp(60),
-            font_size="17sp")
-        self.botao_gravar_nota.bind(on_release=self.gravar_nota)
+        self.botao_gravar_nota = ControleGravacao(ao_tocar=self.gravar_nota,
+                                                  rotulo="GRAVAR E FALAR")
         nota.add_widget(self.botao_gravar_nota)
         self.nota_transcricao = Campo(
             hint_text="A fala aparece aqui — ou digite um lembrete",
@@ -1126,10 +1230,8 @@ class TelaAtendimento(Screen):
                               size_hint_y=None, height=dp(48), font_size="17sp")
         topo.add_widget(self.campo_id)
 
-        self.botao_gravar = Botao(texto=rotulo_icone("microfone", "GRAVAR E FALAR"),
-                                  cor=CORES["terracota"],
-                                  size_hint_y=None, height=dp(64), font_size="18sp")
-        self.botao_gravar.bind(on_release=self.gravar)
+        self.botao_gravar = ControleGravacao(ao_tocar=self.gravar,
+                                             rotulo="GRAVAR E FALAR")
         topo.add_widget(self.botao_gravar)
 
         topo.add_widget(etiqueta("Transcrição (fala ou digitação)"))
@@ -1614,7 +1716,7 @@ class TelaConfig(Screen):
 # ===========================================================================
 class AppVeterinaria(App):
     def build(self):
-        self.title = "VacaVet — Atendimento Veterinário"
+        self.title = "VetSheets — Atendimento Veterinário"
         Window.clearcolor = CORES["fundo"]
         # Em computador, simula uma tela de celular; no Android usa a tela cheia.
         if platform not in ("android", "ios"):

@@ -1,4 +1,4 @@
-name: Gerar APK do VacaVet
+name: Gerar APK do VetSheets
 
 # Roda a cada push na main/master ou manualmente pelo botão "Run workflow"
 on:
@@ -89,6 +89,6 @@ jobs:
       - name: Publicar o APK como artefato para download
         uses: actions/upload-artifact@v4
         with:
-          name: vacavet-apk
+          name: vetsheets-apk
           path: bin/*.apk
           if-no-files-found: error

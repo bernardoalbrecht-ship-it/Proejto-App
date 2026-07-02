@@ -139,7 +139,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(
             "<html><body style='font-family:sans-serif;text-align:center;"
             "padding-top:60px'><h2>Login concluído ✅</h2><p>Pode fechar esta "
-            "aba e voltar para o VacaVet.</p></body></html>".encode("utf-8"))
+            "aba e voltar para o VetSheets.</p></body></html>".encode("utf-8"))
         if self.server.evento is not None:
             self.server.evento.set()
 
