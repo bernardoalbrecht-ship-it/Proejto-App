@@ -51,7 +51,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 
 from backend import database, audio_processor, ai_analyzer, google_sheets_sync
-from backend import config
+from backend import config, google_auth
 from backend.models import Atendimento
 from backend.config import COLUNAS_EXIBICAO
 
@@ -751,17 +751,43 @@ class TelaLogin(Screen):
         self.manager.current = "inicial"
 
     def _entrar_google(self, *_):
-        """BETA: por enquanto é uma entrada simulada — registra o login e
-        habilita a intenção de nuvem. O login Google REAL (OAuth) precisa de
-        um Client ID criado no Google Cloud, que configuramos depois."""
-        nome = self.campo_nome.text.strip() or "Conta Google (beta)"
-        SESSAO["usuario"] = nome
-        SESSAO["nuvem"] = True
-        aviso("Login com Google (beta)",
-              "Entrada registrada como \"%s\".\n\nO login Google real e a "
-              "sincronização na nuvem serão ativados quando as credenciais "
-              "forem configuradas." % nome)
-        self.manager.current = "inicial"
+        """Login REAL com Google (OAuth). Abre o navegador na tela de
+        consentimento; ao voltar, o app fica conectado e passa a criar/atualizar
+        a planilha no Drive do próprio usuário ao sincronizar."""
+        # Se já está logado neste aparelho, entra direto.
+        if google_auth.esta_logado():
+            SESSAO["usuario"] = google_auth.email_logado() or "Conta Google"
+            SESSAO["nuvem"] = True
+            self.manager.current = "inicial"
+            return
+
+        if not google_auth.esta_configurado():
+            aviso("Login com Google",
+                  "O login com Google ainda não está configurado neste app "
+                  "(faltam as credenciais OAuth). Enquanto isso, você pode usar "
+                  "o app normalmente e sincronizar em modo local.")
+            return
+
+        aviso("Login com Google",
+              "Vou abrir o navegador para você entrar na sua conta Google e "
+              "autorizar. Depois de autorizar, volte para o VacaVet.")
+
+        def ao_sucesso(email):
+            def _ui(*_):
+                SESSAO["usuario"] = email or "Conta Google"
+                SESSAO["nuvem"] = True
+                aviso("Conectado ao Google",
+                      "Login concluído como:\n%s\n\nAgora o botão Sincronizar "
+                      "cria/atualiza a planilha no seu Drive." % (email or "—"))
+                self.manager.current = "inicial"
+            Clock.schedule_once(_ui)
+
+        def ao_erro(msg):
+            Clock.schedule_once(lambda *_: aviso(
+                "Login com Google", "Não foi possível concluir o login.\n\n%s"
+                % msg))
+
+        google_auth.login(callback_sucesso=ao_sucesso, callback_erro=ao_erro)
 
 
 # ===========================================================================
@@ -1056,10 +1082,22 @@ class TelaInicial(Screen):
         resultado = google_sheets_sync.sincronizar(
             self.campo_propriedade.text.strip() or "SemNome"
         )
-        modo = "simulada (modo teste)" if resultado["modo"] == "simulado" else "real"
-        aviso("Sincronização",
-              "Sincronização %s.\nEnviados: %s\nErros: %s"
-              % (modo, resultado["enviados"], resultado["erros"]))
+        if resultado.get("modo") == "simulado":
+            aviso("Sincronização (modo local)",
+                  "Marquei %s atendimento(s) como sincronizados neste "
+                  "aparelho.\n\nPara enviar de verdade a uma planilha no seu "
+                  "Google Drive, entre com o Google (tela de login)."
+                  % resultado["enviados"])
+        elif resultado.get("erros"):
+            aviso("Sincronização",
+                  "Não consegui enviar agora.\n\n%s"
+                  % resultado.get("detalhe", "Tente novamente."))
+        else:
+            corpo = ("Enviados: %s\nErros: %s" %
+                     (resultado["enviados"], resultado["erros"]))
+            if resultado.get("link"):
+                corpo += "\n\nPlanilha no seu Drive:\n%s" % resultado["link"]
+            aviso("Sincronizado com o Google", corpo)
         self.on_pre_enter()
 
     def ir(self, destino):
