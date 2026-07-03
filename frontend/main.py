@@ -61,6 +61,10 @@ from backend.config import COLUNAS_EXIBICAO
 SESSAO = {"propriedade": "", "tipo_producao": config.TIPO_PRODUCAO_OPCOES[1],  # "Leite"
           "usuario": "", "nuvem": False}
 
+# Comando de voz interpretado na tela inicial e ainda não aplicado. A tela de
+# Atendimento lê isto no on_pre_enter para já abrir com os campos preenchidos.
+PREFILL_COMANDO = {"texto": ""}
+
 
 # ===========================================================================
 # FONTE DE ÍCONES — Material Design Icons (evita "tofu"/quadrado indefinido
@@ -968,9 +972,22 @@ class TelaInicial(Screen):
             rotulo=rotulo_icone("estrelas", "FALAR E PREENCHER"))
         nota.add_widget(self.botao_gravar_nota)
         self.nota_transcricao = Campo(
-            hint_text="A fala aparece aqui — ou digite um lembrete",
+            hint_text="A fala aparece aqui — ou digite um comando",
             size_hint_y=None, height=dp(74))
         nota.add_widget(self.nota_transcricao)
+
+        # Interpreta a fala como um COMANDO e já abre o atendimento preenchido.
+        # Ex.: "cabanha X, vaca 22, 5ml de corticoide, sem alterações, não prenha".
+        nota.add_widget(texto_livre(
+            "Ex.: [i]\"cabanha Boa Vista, vaca 22, 5ml de corticoide, sem "
+            "alterações, não prenha\"[/i]", cor=CORES["texto_suave"],
+            tamanho="11sp", altura=dp(32)))
+        botao_interpretar = Botao(
+            texto=rotulo_icone("estrelas", "Preencher campos a partir da fala"),
+            cor=CORES["verde_claro"], size_hint_y=None, height=dp(48),
+            font_size="14sp")
+        botao_interpretar.bind(on_release=self.interpretar_comando)
+        nota.add_widget(botao_interpretar)
         corpo.add_widget(nota)
 
         # --- Cartão: dados da sessão ---
@@ -1174,6 +1191,39 @@ class TelaInicial(Screen):
         fala; tocar de novo para a captação."""
         alternar_gravacao(self, self.botao_gravar_nota, self.nota_transcricao)
 
+    def interpretar_comando(self, *_):
+        """Interpreta a fala da tela inicial como um COMANDO completo e já abre
+        o Atendimento preenchido. Ex.: "cabanha X, na vaca 22, 5ml de
+        corticoide, sem alterações, não prenha" -> define a propriedade,
+        a vaca e os campos, e navega para a ficha para revisão/salvar."""
+        texto = self.nota_transcricao.text.strip()
+        if not texto:
+            aviso("Atenção", "Fale (ou digite) o comando antes de preencher.")
+            return
+
+        dados = ai_analyzer.analisar(texto)
+
+        # Propriedade dita no comando (ex.: "cabanha X") entra no campo e é salva.
+        propriedade_dita = (dados.get("propriedade") or "").strip()
+        if propriedade_dita:
+            self.campo_propriedade.text = propriedade_dita
+            database.adicionar_propriedade(propriedade_dita)
+            self._atualizar_propriedades_salvas()
+
+        propriedade = self.campo_propriedade.text.strip()
+        if not propriedade:
+            aviso("Falta a propriedade",
+                  "Não identifiquei a fazenda no comando. Diga algo como "
+                  "\"cabanha Boa Vista...\" ou escreva o nome no campo "
+                  "Propriedade antes de preencher.")
+            return
+
+        SESSAO["propriedade"] = propriedade
+        SESSAO["tipo_producao"] = self.seletor_tipo.valor
+        # A tela de Atendimento lê este texto no on_pre_enter e preenche a ficha.
+        PREFILL_COMANDO["texto"] = texto
+        self.ir("atendimento")
+
     def on_leave(self):
         # Se sair da tela ouvindo, cancela a captação para não ficar pendurada.
         sessao = getattr(self, "_sessao_audio", None)
@@ -1356,6 +1406,13 @@ class TelaAtendimento(Screen):
             entrada.text = ""
         self.seletor_status.selecionar("", disparar_callback=False)
         self.seletor_diagnostico.selecionar("", disparar_callback=False)
+
+        # Veio um comando falado da tela inicial? Preenche a ficha a partir dele.
+        comando = PREFILL_COMANDO.get("texto", "")
+        PREFILL_COMANDO["texto"] = ""
+        if comando:
+            self.transcricao.text = comando
+            self.analisar_texto()
 
     def gravar(self, *_):
         """Liga/desliga a captação ao vivo do atendimento. Ao terminar,

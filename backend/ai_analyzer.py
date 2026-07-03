@@ -128,6 +128,9 @@ MEDICACOES = {
     "banamine": "Flunixin Meglumine (Banamine)",
     "meloxicam": "Meloxicam",
     "dexametasona": "Dexametasona",
+    "corticoide": "Corticoide", "corticóide": "Corticoide",
+    "corticosteroide": "Corticoide", "corticosteróide": "Corticoide",
+    "corticoides": "Corticoide",
     "oxitetraciclina": "Oxitetraciclina",
     "penicilina": "Penicilina",
     "ivermectina": "Ivermectina",
@@ -253,6 +256,7 @@ def _analisar_com_regras(transcricao: str) -> dict:
     tokens = _tokens(texto)
 
     resultado = {
+        "propriedade": _extrair_propriedade(texto),
         "id_vaca": _extrair_id_vaca(texto),
         "procedimento": "",
         "raca": "",
@@ -277,11 +281,17 @@ def _analisar_com_regras(transcricao: str) -> dict:
             resultado["raca"] = nome
             break
 
-    # Status reprodutivo (apenas Prenha/Vazia, as duas opções da tela)
-    for chave, nome in STATUS.items():
-        if _bate(texto, chave, tokens):
-            resultado["status_reprodutivo"] = nome
-            break
+    # Status reprodutivo (apenas Prenha/Vazia, as duas opções da tela).
+    # IMPORTANTE: tratar a NEGAÇÃO primeiro — "não prenha", "não gestante",
+    # "não deu prenhe" significam VAZIA. Sem isto, a busca por "prenha"
+    # bateria dentro de "não prenha" e marcaria Prenha por engano.
+    if re.search(r"\b(n[ãa]o|nao)\s+\w*\s*(pren|gest|gr[áa]vid)", texto):
+        resultado["status_reprodutivo"] = "Vazia"
+    else:
+        for chave, nome in STATUS.items():
+            if _bate(texto, chave, tokens):
+                resultado["status_reprodutivo"] = nome
+                break
 
     # Diagnóstico: procura por uma das opções conhecidas (mesmas da tela).
     # Se nada bater, deixamos em branco — o veterinário escolhe manualmente
@@ -299,12 +309,53 @@ def _analisar_com_regras(transcricao: str) -> dict:
         if _bate(texto, chave, tokens) and nome_bonito not in vistos:
             encontrados.append(nome_bonito)
             vistos.add(nome_bonito)
-    resultado["medicacoes"] = ", ".join(encontrados)
+    medicacoes = ", ".join(encontrados)
+    # Doses ditas na fala (ex.: "5ml de corticoide", "10 mg", "2 cc").
+    doses = [d.replace(" ", "") for d in
+             re.findall(r"\b(\d+\s*(?:ml|mg|cc|ui|l))\b", texto)]
+    if doses:
+        etiqueta_dose = ", ".join(doses)
+        medicacoes = ("%s (%s)" % (medicacoes, etiqueta_dose)
+                      if medicacoes else etiqueta_dose)
+    resultado["medicacoes"] = medicacoes
 
     # Próxima ação sugerida
     resultado["proxima_acao"] = PROXIMA_ACAO.get(resultado["procedimento"], "")
 
     return resultado
+
+
+# Palavras que anunciam o NOME DA PROPRIEDADE na fala.
+_PALAVRAS_PROPRIEDADE = (
+    "cabanha", "cabana", "fazenda", "sítio", "sitio", "propriedade",
+    "granja", "haras", "estância", "estancia", "rancho", "chácara", "chacara",
+)
+# Palavras que ENCERRAM o nome da propriedade (conectores / resto da frase).
+_PARADAS_PROPRIEDADE = {
+    "e", "na", "no", "da", "do", "de", "dentro", "vaca", "vaquinha", "brinco",
+    "animal", "com", "que", "adicionar", "adiciona", "coloca", "colocar",
+    "anota", "anotar", "registrar", "registra", "fiz", "apliquei",
+}
+
+
+def _extrair_propriedade(texto: str) -> str:
+    """Procura 'cabanha X', 'fazenda Boa Vista', 'sítio do João'... e devolve
+    o nome (até 3 palavras), parando em conectores como 'e', 'na', 'dentro',
+    'vaca'. Devolve '' se não encontrar."""
+    for palavra in _PALAVRAS_PROPRIEDADE:
+        encontro = re.search(r"\b%s\s+(.+)" % palavra, texto)
+        if not encontro:
+            continue
+        nome = []
+        for token in _tokens(encontro.group(1)):
+            if token in _PARADAS_PROPRIEDADE:
+                break
+            nome.append(token)
+            if len(nome) >= 3:
+                break
+        if nome:
+            return " ".join(p.capitalize() for p in nome)
+    return ""
 
 
 def _extrair_id_vaca(texto: str) -> str:
@@ -359,8 +410,9 @@ def _analisar_com_ia(transcricao: str) -> dict:
     instrucao = (
         "Você é assistente de um veterinário de gado leiteiro no Brasil. "
         "A partir da frase falada, extraia um JSON com as chaves exatamente: "
-        "id_vaca, procedimento, status_reprodutivo, diagnostico, medicacoes, "
-        "proxima_acao, observacoes. Responda SOMENTE o JSON, sem texto extra."
+        "propriedade, id_vaca, procedimento, status_reprodutivo, diagnostico, "
+        "medicacoes, proxima_acao, observacoes. 'propriedade' é o nome da "
+        "fazenda/cabanha citada. Responda SOMENTE o JSON, sem texto extra."
     )
 
     resposta = cliente.chat.completions.create(
@@ -378,7 +430,7 @@ def _analisar_com_ia(transcricao: str) -> dict:
     dados = json.loads(conteudo)
 
     # Garante que todas as chaves existam
-    for chave in ["id_vaca", "procedimento", "status_reprodutivo",
+    for chave in ["propriedade", "id_vaca", "procedimento", "status_reprodutivo",
                   "diagnostico", "medicacoes", "proxima_acao", "observacoes"]:
         dados.setdefault(chave, "")
     return dados
