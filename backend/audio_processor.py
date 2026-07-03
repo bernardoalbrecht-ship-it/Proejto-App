@@ -83,12 +83,17 @@ def iniciar_transcricao_ao_vivo(callback_parcial=None, callback_final=None,
     """Começa a ouvir o microfone e transcrever AO VIVO. Devolve uma sessão
     com .parar() para encerrar a captação (botão 'Parar')."""
     global _SESSAO_ATIVA
+    # ATENÇÃO: _no_android() é True quando o app está RODANDO NO Android
+    # (dentro do APK). A versão anterior estava com os ramos TROCADOS: no
+    # celular caía no caminho do desktop (Vosk/speech_recognition, que não
+    # existem no APK) e a "gravação" terminava na hora com texto vazio — o
+    # botão parecia não fazer nada. Agora cada plataforma usa o seu motor.
     if _no_android():
-        _SESSAO_ATIVA = _iniciar_desktop(callback_parcial, callback_final,
-                                         callback_erro)
-    else:
         _SESSAO_ATIVA = _iniciar_android(callback_parcial, callback_final,
                                          callback_erro, preferir_offline)
+    else:
+        _SESSAO_ATIVA = _iniciar_desktop(callback_parcial, callback_final,
+                                         callback_erro)
     return _SESSAO_ATIVA
 
 

@@ -364,18 +364,24 @@ class RolagemComCampos(ScrollView):
     teclado abrir apenas enquanto o dedo ficava pressionado (e sumir ao
     soltar). Aqui, ao tocar sobre um campo, focamos na hora — o teclado abre
     no primeiro toque e continua aberto depois de soltar o dedo.
+
+    IMPORTANTE: botões NÃO precisam (nem devem receber) esse tratamento.
+    Tudo que herda de ButtonBehavior — a classe Botao e o BotaoGravarRedondo —
+    já entende o protocolo de toque "adiado" do ScrollView e responde ao
+    toque simples normalmente (é por isso que "Salvar", "Sincronizar" etc.
+    sempre funcionaram). A versão antiga despachava o toque na mão também
+    para o botão de gravar, o que era pouco confiável; hoje só o TextInput
+    precisa do foco imediato.
     """
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             alvo = self._alvo_sob_toque(self, touch.pos[0], touch.pos[1])
             if alvo is not None:
-                if isinstance(alvo, TextInput):
-                    alvo.focus = True
-                # Entrega o toque DIRETO ao widget (campo de texto OU botão de
-                # gravar) e CONSOME o evento (return True). Assim o ScrollView
-                # nunca "segura" e redistribui esse toque — era essa espera que
-                # exigia manter o dedo pressionado, tanto para digitar quanto
-                # para gravar. Agora o primeiro toque já responde.
+                alvo.focus = True
+                # Entrega o toque DIRETO ao campo de texto e CONSOME o evento
+                # (return True). Assim o ScrollView nunca "segura" e
+                # redistribui esse toque — era essa espera que exigia manter
+                # o dedo pressionado para digitar.
                 touch.push()
                 touch.apply_transform_2d(self.to_local)
                 try:
@@ -386,15 +392,14 @@ class RolagemComCampos(ScrollView):
         return super().on_touch_down(touch)
 
     def _alvo_sob_toque(self, widget, tx, ty):
-        # Procura de cima para baixo um widget "interativo" sob o toque: um
-        # campo de texto (para focar) ou o botão redondo de gravar (para
-        # disparar na hora). Usa coordenadas ABSOLUTAS de janela (to_window)
-        # para funcionar mesmo com o conteúdo rolado. Retorna o widget ou None.
+        # Procura de cima para baixo um campo de texto sob o toque (para
+        # focar na hora). Usa coordenadas ABSOLUTAS de janela (to_window)
+        # para funcionar mesmo com o conteúdo rolado. Retorna o campo ou None.
         for filho in widget.children:
             achado = self._alvo_sob_toque(filho, tx, ty)
             if achado is not None:
                 return achado
-        if isinstance(widget, (TextInput, BotaoGravarRedondo)) and not widget.disabled:
+        if isinstance(widget, TextInput) and not widget.disabled:
             wx, wy = widget.to_window(widget.x, widget.y)
             if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
                 return widget
@@ -410,18 +415,24 @@ def _desfocar_campos(widget):
         widget.focus = False
 
 
-class BotaoGravarRedondo(Widget):
+class BotaoGravarRedondo(ButtonBehavior, Widget):
     """Botão de gravação estilo "câmera de vídeo": um CÍRCULO vermelho que,
     ao começar a gravar, vira um QUADRADO (toque para parar).
 
-    Duas decisões importantes para funcionar bem no Android:
-    1. Ele reage no on_touch_down — no instante em que o dedo ENCOSTA na
-       tela — e não no on_release. Dentro de um ScrollView, o "soltar" pode
-       não chegar direito ao widget (o ScrollView segura o toque para decidir
-       se é rolagem); era por isso que o botão antigo só respondia com o
-       dedo preso na tela.
-    2. Ele retorna True ao tratar o toque (consome o evento): o ScrollView
-       não tenta rolar nem redistribuir esse toque depois.
+    RECONSTRUÍDO sobre ButtonBehavior — o MESMO mecanismo dos demais botões
+    do app (classe Botao), que sempre funcionaram com toque simples dentro
+    do ScrollView ("Iniciar Atendimento", "Sincronizar", "Salvar"...).
+
+    Por que isso importa: o ScrollView segura o toque por alguns ms para
+    decidir se é rolagem antes de repassá-lo ao filho. A versão antiga era um
+    Widget cru tratando on_touch_down na mão e, por isso, só disparava de
+    forma confiável com o dedo preso na tela. O ButtonBehavior já entende o
+    protocolo de toque "adiado" do ScrollView e dispara on_press/on_release
+    com um toque simples — sem precisar de nenhum despacho manual.
+
+    O uso é de ALTERNÂNCIA (toggle): 1º toque começa a gravar (o botão fica
+    FIXO no estado gravando, sem segurar o dedo) e o 2º toque para. Quem
+    controla a alternância é o callback `ao_tocar` (ver alternar_gravacao).
     """
     def __init__(self, ao_tocar=None, diametro=dp(76), **kwargs):
         kwargs.setdefault("size_hint", (None, None))
@@ -460,21 +471,24 @@ class BotaoGravarRedondo(Widget):
         self._gravando = bool(gravando)
         self._att()
 
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            # Antes de gravar, recolhe o teclado e tira o foco de qualquer
-            # campo de texto. Assim a tela volta à posição normal (sem o
-            # deslocamento do teclado) e o círculo/quadrado fica sempre
-            # visível durante a gravação.
-            _desfocar_campos(Window)
-            try:
-                Window.release_all_keyboards()
-            except Exception:
-                pass
-            if self._ao_tocar is not None:
-                self._ao_tocar(self)
-            return True
-        return super().on_touch_down(touch)
+    def on_press(self):
+        # Feedback visual imediato (igual à classe Botao): escurece o miolo
+        # enquanto o dedo está no botão, para o toque "parecer registrado".
+        self._cor_miolo.rgba = _escurecer(CORES["terracota"])
+
+    def on_release(self):
+        self._cor_miolo.rgba = CORES["terracota"]
+        # Antes de gravar, recolhe o teclado e tira o foco de qualquer
+        # campo de texto. Assim a tela volta à posição normal (sem o
+        # deslocamento do teclado) e o círculo/quadrado fica sempre
+        # visível durante a gravação.
+        _desfocar_campos(Window)
+        try:
+            Window.release_all_keyboards()
+        except Exception:
+            pass
+        if self._ao_tocar is not None:
+            self._ao_tocar(self)
 
 
 class ControleGravacao(BoxLayout):
@@ -688,11 +702,11 @@ def confirmar(titulo, mensagem, ao_confirmar, texto_confirmar="Excluir"):
     popup.open()
 
 
-def alternar_gravacao(host, botao, campo, rotulo_idle="GRAVAR E FALAR",
-                      ao_final=None):
-    """Liga/desliga a captação de voz AO VIVO.
+def alternar_gravacao(host, botao, campo, ao_final=None):
+    """Liga/desliga a captação de voz AO VIVO (comportamento de TOGGLE).
 
-    - 1º toque: começa a ouvir; a transcrição vai aparecendo no `campo`
+    - 1º toque: começa a ouvir e o botão fica FIXO no estado "gravando"
+      (nada de segurar o dedo); a transcrição vai aparecendo no `campo`
       enquanto a pessoa fala (resultados parciais).
     - 2º toque (ou fim automático): para a captação.
 
@@ -939,15 +953,19 @@ class TelaInicial(Screen):
         corpo.add_widget(boas)
 
         # --- Cartão: nota rápida por voz (grava e transcreve o que fazer) ---
+        # É o "botão mágico" da tela inicial: um toque liga a escuta, a fala
+        # vai preenchendo o campo abaixo sozinha, e outro toque para.
         nota = Cartao()
-        nota.add_widget(texto_livre("[b]Nota rápida por voz[/b]",
-                                    cor=CORES["verde"], tamanho="15sp",
-                                    altura=dp(24)))
         nota.add_widget(texto_livre(
-            "Grave um lembrete do que precisa ser feito — ele é transcrito aqui.",
+            "[b]%s[/b]" % rotulo_icone("estrelas", "Nota rápida por voz"),
+            cor=CORES["verde"], tamanho="15sp", altura=dp(24)))
+        nota.add_widget(texto_livre(
+            "Toque UMA vez, fale o lembrete e ele preenche o campo abaixo "
+            "sozinho. Toque de novo para parar.",
             cor=CORES["texto_suave"], tamanho="12sp", altura=dp(34)))
-        self.botao_gravar_nota = ControleGravacao(ao_tocar=self.gravar_nota,
-                                                  rotulo="GRAVAR E FALAR")
+        self.botao_gravar_nota = ControleGravacao(
+            ao_tocar=self.gravar_nota,
+            rotulo=rotulo_icone("estrelas", "FALAR E PREENCHER"))
         nota.add_widget(self.botao_gravar_nota)
         self.nota_transcricao = Campo(
             hint_text="A fala aparece aqui — ou digite um lembrete",
@@ -1151,10 +1169,10 @@ class TelaInicial(Screen):
             self.campo_propriedade.text = ""
 
     def gravar_nota(self, *_):
-        """Liga/desliga a captação de voz ao vivo do lembrete rápido: o texto
-        aparece enquanto se fala; tocar de novo para a captação."""
-        alternar_gravacao(self, self.botao_gravar_nota, self.nota_transcricao,
-                          rotulo_idle="GRAVAR E FALAR")
+        """O "botão mágico" da tela inicial: liga/desliga a captação de voz
+        ao vivo do lembrete rápido. O texto aparece no campo enquanto se
+        fala; tocar de novo para a captação."""
+        alternar_gravacao(self, self.botao_gravar_nota, self.nota_transcricao)
 
     def on_leave(self):
         # Se sair da tela ouvindo, cancela a captação para não ficar pendurada.
@@ -1250,8 +1268,11 @@ class TelaAtendimento(Screen):
                               size_hint_y=None, height=dp(48), font_size="17sp")
         topo.add_widget(self.campo_id)
 
-        self.botao_gravar = ControleGravacao(ao_tocar=self.gravar,
-                                             rotulo="GRAVAR E FALAR")
+        # Um toque liga a escuta; ao terminar, a fala preenche a ficha
+        # automaticamente (mesma "mágica" da nota rápida na tela inicial).
+        self.botao_gravar = ControleGravacao(
+            ao_tocar=self.gravar,
+            rotulo=rotulo_icone("estrelas", "FALAR E PREENCHER A FICHA"))
         topo.add_widget(self.botao_gravar)
 
         topo.add_widget(etiqueta("Transcrição (fala ou digitação)"))
@@ -1340,7 +1361,6 @@ class TelaAtendimento(Screen):
         """Liga/desliga a captação ao vivo do atendimento. Ao terminar,
         preenche os campos automaticamente a partir da fala."""
         alternar_gravacao(self, self.botao_gravar, self.transcricao,
-                          rotulo_idle="GRAVAR E FALAR",
                           ao_final=lambda _t: self.analisar_texto())
 
     def on_leave(self):
