@@ -1,8 +1,8 @@
 """
 test_parser.py
 --------------
-Testes do parser híbrido (backend.nlp), incluindo os exemplos do PRD e o
-comportamento que a versão anterior já suportava (proteção contra regressão).
+Testes do parser híbrido (vetvoice.domain.parsing), incluindo os exemplos do PRD
+e o comportamento que a versão anterior já suportava (contra regressão).
 
 Rode com:  python -m pytest tests/test_parser.py   (ou python -m tests.test_parser)
 """
@@ -12,11 +12,14 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend import ai_analyzer  # fachada — exercita o caminho real de produção
+from vetvoice.domain.parsing import ParserHibridoOffline
+from vetvoice.shared import config
+
+_parser = ParserHibridoOffline()
 
 
 def analisar(t):
-    return ai_analyzer.analisar(t)
+    return _parser.analisar(t)
 
 
 # --- Exemplos do PRD -------------------------------------------------------
@@ -24,13 +27,11 @@ def analisar(t):
 def test_prd_jose_fez_iatf():
     r = analisar("José fez IATF")
     assert r["procedimento"] == "Inseminação Artificial"
-    # "José" não pode virar nome de propriedade nem termo clínico.
     assert r["propriedade"] == ""
 
 
 def test_prd_metronidazol_3ml():
-    r = analisar("Metronidazol 3 ml")
-    assert r["medicacoes"] == "Metronidazol 3ml"
+    assert analisar("Metronidazol 3 ml")["medicacoes"] == "Metronidazol 3ml"
 
 
 def test_prd_dose_por_extenso():
@@ -56,9 +57,7 @@ def test_prd_frase_completa():
 
 def test_prd_diagnostico_desconhecido_vira_outro():
     r = analisar("suspeita de inflamação pós-parto")
-    # Não está na lista de chips -> texto livre (a tela marca "Outro").
     assert r["diagnostico"] != ""
-    from backend import config
     assert r["diagnostico"] not in config.DIAGNOSTICO_OPCOES
 
 
@@ -80,8 +79,7 @@ def test_prenha_direto():
 
 
 def test_dose_antes_da_droga():
-    r = analisar("5 ml de corticoide")
-    assert r["medicacoes"] == "Corticoide 5ml"
+    assert analisar("5 ml de corticoide")["medicacoes"] == "Corticoide 5ml"
 
 
 def test_medicamento_sem_dose():
@@ -95,7 +93,6 @@ def test_propriedade_com_gatilho():
 
 
 def test_id_nao_pega_numero_da_dose():
-    # Sem "vaca N": o id NÃO deve capturar o 3 da dose.
     assert analisar("metronidazol 3 ml")["id_vaca"] == ""
 
 
@@ -107,13 +104,11 @@ def test_peso_e_idade():
 
 
 def test_fuzzy_erro_de_voz():
-    # 'flunixim' (erro de transcrição) deve canonizar para Flunixin Meglumine.
     assert "Flunixin Meglumine" in analisar("apliquei flunixim")["medicacoes"]
 
 
 def test_corrigir_transcricao():
-    corrigido = ai_analyzer.corrigir_transcricao("a vaca esta vasia")
-    assert "vazia" in corrigido.lower()
+    assert "vazia" in _parser.corrigir_transcricao("a vaca esta vasia").lower()
 
 
 def test_todas_as_chaves_presentes():
@@ -132,10 +127,10 @@ if __name__ == "__main__":
     for f in funcs:
         try:
             f()
-            print(f"✅ {f.__name__}")
+            print(f"[OK] {f.__name__}")
         except Exception:
             falhas += 1
-            print(f"❌ {f.__name__}")
+            print(f"[FALHOU] {f.__name__}")
             traceback.print_exc()
     print(f"\n{len(funcs) - falhas}/{len(funcs)} testes passaram.")
     sys.exit(1 if falhas else 0)
