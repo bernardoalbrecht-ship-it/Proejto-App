@@ -11,8 +11,8 @@ from kivy.uix.widget import Widget
 
 from vetvoice.presentation.theme import CORES, TEMA, aplicar_tema, rotulo_icone
 from vetvoice.presentation.widgets import (
-    Botao, Cartao, RolagemComCampos, SeletorOpcoes, cabecalho, chip, pagina,
-    texto_livre,
+    Botao, Cartao, RolagemComCampos, SeletorOpcoes, chip, pagina, texto_livre,
+    titulo_tela,
 )
 
 
@@ -21,12 +21,11 @@ class TelaConfig(Screen):
         self.servicos = servicos
         super().__init__(**kwargs)
         raiz = pagina()
-        raiz.add_widget(cabecalho("Configurações", "Ajuda e modo de operação",
-                                  icone_nome="engrenagem", com_voltar=True))
+        raiz.add_widget(titulo_tela("Ajustes", "Conta, aparência e ajuda"))
 
         scroll = RolagemComCampos()
-        corpo = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(14),
-                          size_hint_y=None)
+        corpo = BoxLayout(orientation="vertical", padding=[dp(16), dp(8), dp(16),
+                          dp(16)], spacing=dp(14), size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
 
         # Cartão modo atual
@@ -82,12 +81,6 @@ class TelaConfig(Screen):
             "campo de transcrição e toque em 'Preencher campos'. Funciona igual.",
             cor=CORES["marrom"], tamanho="13sp", altura=dp(50)))
         corpo.add_widget(dica)
-
-        botao_voltar = Botao(texto="Voltar", cor=CORES["marrom"],
-                             size_hint_y=None, height=dp(50))
-        botao_voltar.bind(on_release=lambda *_: setattr(self.manager,
-                                                        "current", "inicial"))
-        corpo.add_widget(botao_voltar)
 
         scroll.add_widget(corpo)
         raiz.add_widget(scroll)

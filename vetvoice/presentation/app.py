@@ -20,7 +20,7 @@ from kivy.utils import platform
 
 from vetvoice.composition import montar_servicos
 from vetvoice.presentation.theme import CORES
-from vetvoice.presentation.widgets import Botao, Cartao, texto_livre
+from vetvoice.presentation.widgets import Botao, BottomNav, Cartao, texto_livre
 from vetvoice.presentation.screens.atendimento import TelaAtendimento
 from vetvoice.presentation.screens.configuracoes import TelaConfig
 from vetvoice.presentation.screens.historico import TelaHistorico
@@ -33,6 +33,10 @@ from vetvoice.shared import config
 class AppVeterinaria(App):
     ESPACO_MINIMO_BYTES = 20 * 1024 * 1024   # 20 MB de folga mínima
     MAX_BACKUPS_GUARDADOS = 5
+
+    # Telas que exibem a barra de navegação inferior (as "abas" do app). As
+    # demais (splash, login, atendimento) ocupam a tela cheia, sem a barra.
+    ABAS = ("inicial", "historico", "config")
 
     def build(self):
         self.title = "VetVoice — Atendimento Veterinário"
@@ -47,28 +51,49 @@ class AppVeterinaria(App):
         if platform == "android":
             self._preparar_android()
 
-        gerenciador = ScreenManager(transition=FadeTransition(duration=0.18))
-        gerenciador.add_widget(TelaSplash(self.servicos, name="splash"))
-        self._adicionar_telas_do_app(gerenciador)
-        gerenciador.current = "splash"
-        return gerenciador
+        # Raiz = conteúdo (ScreenManager) + barra inferior fixa. A barra só
+        # aparece nas abas; splash/login/atendimento ocupam tudo.
+        self._raiz = BoxLayout(orientation="vertical")
+        self._construir_conteudo(tela_inicial="splash")
+        return self._raiz
 
-    def _adicionar_telas_do_app(self, gerenciador):
-        """As telas 'de dentro' (todas menos o splash). Reutilizado ao trocar
-        o tema, que exige recriar os widgets com a paleta nova."""
-        gerenciador.add_widget(TelaLogin(self.servicos, name="login"))
-        gerenciador.add_widget(TelaInicial(self.servicos, name="inicial"))
-        gerenciador.add_widget(TelaAtendimento(self.servicos, name="atendimento"))
-        gerenciador.add_widget(TelaHistorico(self.servicos, name="historico"))
-        gerenciador.add_widget(TelaConfig(self.servicos, name="config"))
+    def _construir_conteudo(self, tela_inicial):
+        """(Re)cria o ScreenManager e a barra inferior dentro da raiz. Usado no
+        build e ao trocar de tema (que exige recriar os widgets com a paleta nova)."""
+        self._raiz.clear_widgets()
+
+        self.sm = ScreenManager(transition=FadeTransition(duration=0.18))
+        self.sm.add_widget(TelaSplash(self.servicos, name="splash"))
+        self.sm.add_widget(TelaLogin(self.servicos, name="login"))
+        self.sm.add_widget(TelaInicial(self.servicos, name="inicial"))
+        self.sm.add_widget(TelaAtendimento(self.servicos, name="atendimento"))
+        self.sm.add_widget(TelaHistorico(self.servicos, name="historico"))
+        self.sm.add_widget(TelaConfig(self.servicos, name="config"))
+        self.sm.bind(current=self._ao_trocar_tela)
+
+        self.nav = BottomNav(ao_selecionar=self._ir_para_aba)
+
+        self._raiz.add_widget(self.sm)
+        self._raiz.add_widget(self.nav)
+
+        self.sm.current = tela_inicial
+        self._ao_trocar_tela(self.sm, tela_inicial)
+
+    def _ir_para_aba(self, nome):
+        self.sm.current = nome
+
+    def _ao_trocar_tela(self, _sm, nome):
+        """Mostra a barra inferior só nas abas; destaca a aba atual."""
+        eh_aba = nome in self.ABAS
+        self.nav.set_ativo(nome if eh_aba else "")
+        self.nav.height = dp(62) if eh_aba else 0
+        self.nav.opacity = 1 if eh_aba else 0
+        self.nav.disabled = not eh_aba
 
     def reconstruir_telas(self, tela_atual="config"):
         """Recria as telas para pegarem as cores atuais (o tema é 'queimado' nos
         widgets ao desenhar, então trocar de tema exige reconstruir)."""
-        gerenciador = self.root
-        gerenciador.clear_widgets()
-        self._adicionar_telas_do_app(gerenciador)
-        gerenciador.current = tela_atual
+        self._construir_conteudo(tela_inicial=tela_atual)
 
     def _preparar_android(self):
         """Ajustes só do celular: reposicionar a tela quando o teclado abre e

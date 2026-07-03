@@ -1,7 +1,10 @@
 """
-screens/inicial.py — Tela inicial: nota rápida por voz, dados da jornada
-(propriedade + tipo de produção), status de sincronização e ações principais.
+screens/inicial.py — Tela inicial (aba Início): saudação + status de sync, um
+cartão-herói de gravação por voz, o cartão da jornada (propriedade + tipo) e a
+ação principal. Navegação entre abas fica na barra inferior.
 """
+
+from datetime import datetime
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
@@ -15,9 +18,18 @@ from vetvoice.presentation.gravacao import alternar_gravacao
 from vetvoice.presentation.theme import CORES, pintar_fundo, rotulo_icone
 from vetvoice.presentation.widgets import (
     Botao, Campo, Cartao, ControleGravacao, RolagemComCampos, SeletorOpcoes,
-    cabecalho, chip, etiqueta, pagina, texto_livre,
+    etiqueta, pagina, texto_livre,
 )
 from vetvoice.shared import config
+
+
+def _saudacao() -> str:
+    h = datetime.now().hour
+    if h < 12:
+        return "Bom dia"
+    if h < 18:
+        return "Boa tarde"
+    return "Boa noite"
 
 
 class TelaInicial(Screen):
@@ -25,53 +37,57 @@ class TelaInicial(Screen):
         self.servicos = servicos
         super().__init__(**kwargs)
         raiz = pagina()
-        raiz.add_widget(cabecalho("VetVoice", "Atendimento por voz no curral",
-                                  icone_nome="vaca"))
 
         scroll = RolagemComCampos()
-        corpo = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(16),
-                          size_hint_y=None)
+        corpo = BoxLayout(orientation="vertical", padding=[dp(18), dp(16), dp(18),
+                          dp(20)], spacing=dp(14), size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
 
-        # --- Cartão: boas-vindas ---
-        boas = Cartao()
-        boas.add_widget(texto_livre("[b]Bem-vindo(a)![/b]", cor=CORES["texto"],
-                                    tamanho="18sp", altura=dp(26)))
-        corpo.add_widget(boas)
+        # --- Saudação + status de sincronização (pílula tocável) ---
+        cabeca = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(10))
+        saud = BoxLayout(orientation="vertical", spacing=dp(1))
+        self.lbl_saudacao = texto_livre(_saudacao(), cor=CORES["texto_suave"],
+                                        tamanho="13sp", altura=dp(18))
+        self.lbl_usuario = texto_livre("[b]Veterinário[/b]", cor=CORES["texto"],
+                                       tamanho="19sp", altura=dp(28))
+        saud.add_widget(self.lbl_saudacao)
+        saud.add_widget(self.lbl_usuario)
+        cabeca.add_widget(saud)
+        cabeca.add_widget(Widget())
+        self.botao_sync = Botao(texto="", cor=CORES["chip_ok"],
+                                cor_texto=CORES["verde_escuro"], raio=15,
+                                size_hint=(None, None), height=dp(34),
+                                width=dp(150), font_size="12sp")
+        self.botao_sync.bind(on_release=self.sincronizar)
+        cabeca.add_widget(self.botao_sync)
+        corpo.add_widget(cabeca)
 
-        # --- Cartão: nota rápida por voz ---
-        nota = Cartao()
-        nota.add_widget(texto_livre(
-            "[b]%s[/b]" % rotulo_icone("estrelas", "Nota rápida por voz"),
-            cor=CORES["verde"], tamanho="15sp", altura=dp(24)))
-        nota.add_widget(texto_livre(
-            "Toque UMA vez, fale o lembrete e ele preenche o campo abaixo "
-            "sozinho. Toque de novo para parar.",
-            cor=CORES["texto_suave"], tamanho="12sp", altura=dp(34)))
+        # --- Cartão-herói: gravar e ditar o atendimento ---
+        hero = Cartao(padding=[dp(16), dp(20)], spacing=dp(6))
+        hero.add_widget(texto_livre("Toque e dite o atendimento",
+                                    cor=CORES["texto_suave"], tamanho="14sp",
+                                    altura=dp(22)))
+        centro = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(112))
         self.botao_gravar_nota = ControleGravacao(
             ao_tocar=self.gravar_nota,
             rotulo=rotulo_icone("estrelas", "FALAR E PREENCHER"))
-        nota.add_widget(self.botao_gravar_nota)
+        centro.add_widget(self.botao_gravar_nota)
+        hero.add_widget(centro)
         self.nota_transcricao = Campo(
             hint_text="A fala aparece aqui — ou digite um comando",
-            size_hint_y=None, height=dp(74))
-        nota.add_widget(self.nota_transcricao)
-
-        nota.add_widget(texto_livre(
-            "Ex.: [i]\"cabanha Boa Vista, vaca 22, 5ml de corticoide, sem "
-            "alterações, não prenha\"[/i]", cor=CORES["texto_suave"],
-            tamanho="11sp", altura=dp(32)))
+            size_hint_y=None, height=dp(64))
+        hero.add_widget(self.nota_transcricao)
         botao_interpretar = Botao(
-            texto=rotulo_icone("estrelas", "Preencher campos a partir da fala"),
+            texto=rotulo_icone("estrelas", "Preencher e abrir atendimento"),
             cor=CORES["verde_claro"], size_hint_y=None, height=dp(48),
             font_size="14sp")
         botao_interpretar.bind(on_release=self.interpretar_comando)
-        nota.add_widget(botao_interpretar)
-        corpo.add_widget(nota)
+        hero.add_widget(botao_interpretar)
+        corpo.add_widget(hero)
 
-        # --- Cartão: dados da sessão ---
+        # --- Cartão: jornada de hoje (propriedade + tipo de produção) ---
         dados = Cartao()
-        dados.add_widget(texto_livre("[b]Dados da jornada[/b]", cor=CORES["verde"],
+        dados.add_widget(texto_livre("[b]Jornada de hoje[/b]", cor=CORES["texto"],
                                      tamanho="15sp", altura=dp(24)))
 
         dados.add_widget(etiqueta("Propriedade / Fazenda"))
@@ -80,9 +96,9 @@ class TelaInicial(Screen):
                                        hint_text="Ex: Fazenda Boa Vista")
         self.seletor_propriedades = None
         self.campo_propriedade.bind(text=self._ao_editar_propriedade_manual)
-        botao_add_prop = Botao(texto=rotulo_icone("salvar", "Adicionar"),
+        botao_add_prop = Botao(texto=rotulo_icone("salvar", "Add"),
                                cor=CORES["verde_claro"], size_hint_x=None,
-                               width=dp(128), font_size="13sp")
+                               width=dp(92), font_size="13sp")
         botao_add_prop.bind(on_release=lambda *_: self._adicionar_propriedade())
         linha_prop.add_widget(self.campo_propriedade)
         linha_prop.add_widget(botao_add_prop)
@@ -101,35 +117,12 @@ class TelaInicial(Screen):
         dados.add_widget(self.seletor_tipo)
         corpo.add_widget(dados)
 
-        # --- Chip de status de sincronização ---
-        self.caixa_status = BoxLayout(size_hint_y=None, height=dp(30),
-                                      spacing=dp(8))
-        corpo.add_widget(self.caixa_status)
-
-        # --- Ações principais ---
+        # --- Ação principal ---
         botao_iniciar = Botao(
-            texto=rotulo_icone("estetoscopio", "Iniciar Atendimento"),
-            cor=CORES["verde"], size_hint_y=None, height=dp(58), font_size="17sp")
+            texto=rotulo_icone("estetoscopio", "Iniciar atendimento"),
+            cor=CORES["verde"], size_hint_y=None, height=dp(56), font_size="17sp")
         botao_iniciar.bind(on_release=self.iniciar)
         corpo.add_widget(botao_iniciar)
-
-        linha = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(12))
-        botao_historico = Botao(texto=rotulo_icone("prancheta", "Histórico"),
-                                cor=CORES["marrom"])
-        botao_historico.bind(on_release=lambda *_: self.ir("historico"))
-        botao_sincronizar = Botao(texto=rotulo_icone("nuvem_subir", "Sincronizar"),
-                                  cor=CORES["azul"])
-        botao_sincronizar.bind(on_release=self.sincronizar)
-        linha.add_widget(botao_historico)
-        linha.add_widget(botao_sincronizar)
-        corpo.add_widget(linha)
-
-        botao_config = Botao(
-            texto=rotulo_icone("engrenagem", "Configurações e Ajuda"),
-            cor=CORES["cartao"], cor_texto=CORES["texto_suave"],
-            borda=CORES["borda"], size_hint_y=None, height=dp(48))
-        botao_config.bind(on_release=lambda *_: self.ir("config"))
-        corpo.add_widget(botao_config)
 
         scroll.add_widget(corpo)
         raiz.add_widget(scroll)
@@ -137,21 +130,26 @@ class TelaInicial(Screen):
 
     def on_pre_enter(self):
         sessao = self.servicos.sessao
+        self.lbl_saudacao.text = _saudacao()
+        self.lbl_usuario.text = "[b]%s[/b]" % (sessao.usuario or "Veterinário")
         self.campo_propriedade.text = sessao.propriedade
         self.seletor_tipo.selecionar(sessao.tipo_producao, disparar_callback=False)
         self._atualizar_propriedades_salvas()
+        self._atualizar_status_sync()
+
+    def _atualizar_status_sync(self):
         pendentes = self.servicos.atendimentos.contar_pendentes()
-        self.caixa_status.clear_widgets()
-        self.caixa_status.add_widget(Widget())
         if pendentes:
-            self.caixa_status.add_widget(
-                chip("%d aguardando nuvem" % pendentes,
-                     CORES["chip_pend"], CORES["marrom"], icone_nome="relogio"))
+            self.botao_sync.text = rotulo_icone(
+                "nuvem_subir", "%d p/ enviar" % pendentes)
+            self.botao_sync._cor = CORES["chip_pend"]
+            self.botao_sync._c.rgba = CORES["chip_pend"]
+            self.botao_sync.color = CORES["marrom"]
         else:
-            self.caixa_status.add_widget(
-                chip("Tudo sincronizado", CORES["chip_ok"], CORES["verde_escuro"],
-                     icone_nome="check_circulo"))
-        self.caixa_status.add_widget(Widget())
+            self.botao_sync.text = rotulo_icone("check_circulo", "Sincronizado")
+            self.botao_sync._cor = CORES["chip_ok"]
+            self.botao_sync._c.rgba = CORES["chip_ok"]
+            self.botao_sync.color = CORES["verde_escuro"]
 
     def _atualizar_propriedades_salvas(self):
         self.caixa_propriedades_salvas.clear_widgets()
@@ -341,7 +339,7 @@ class TelaInicial(Screen):
             aviso("Sincronização (modo local)",
                   "Marquei %s atendimento(s) como sincronizados neste "
                   "aparelho.\n\nPara enviar de verdade a uma planilha no seu "
-                  "Google Drive, entre com o Google (tela de login)."
+                  "Google Drive, entre com o Google (aba Ajustes)."
                   % resultado["enviados"])
         elif resultado.get("erros"):
             aviso("Sincronização",
@@ -353,7 +351,7 @@ class TelaInicial(Screen):
             if resultado.get("link"):
                 corpo += "\n\nPlanilha no seu Drive:\n%s" % resultado["link"]
             aviso("Sincronizado com o Google", corpo)
-        self.on_pre_enter()
+        self._atualizar_status_sync()
 
     def ir(self, destino):
         self.manager.current = destino

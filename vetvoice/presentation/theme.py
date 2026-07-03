@@ -44,6 +44,7 @@ ICONES = {
     "lampada": "\U000F06E8",
     "voltar": "\U000F0141",
     "lixeira": "\U000F01B4",
+    "casa": "\U000F02DC",
 }
 
 
@@ -71,40 +72,44 @@ def rotulo_icone(nome, texto):
 # ===========================================================================
 # PALETAS — pasto (verde), leite (creme), curral (marrom), terracota (gravar)
 # ===========================================================================
+# Paleta "verde natural moderno": superfícies claras e quentes, verde de pasto
+# mais vivo, bordas quase imperceptíveis e bastante respiro.
 PALETA_CLARA = {
-    "fundo":        (0.960, 0.949, 0.921, 1),
-    "verde":        (0.176, 0.482, 0.353, 1),
-    "verde_claro":  (0.298, 0.686, 0.490, 1),
-    "verde_escuro": (0.098, 0.322, 0.239, 1),
-    "terracota":    (0.878, 0.353, 0.196, 1),
-    "azul":         (0.180, 0.435, 0.596, 1),
-    "marrom":       (0.451, 0.361, 0.290, 1),
-    "cartao":       (1, 1, 1, 1),
-    "texto":        (0.157, 0.196, 0.180, 1),
-    "texto_suave":  (0.435, 0.463, 0.451, 1),
-    "texto_campo":  (0.098, 0.322, 0.239, 1),
-    "borda":        (0.878, 0.867, 0.831, 1),
-    "chip_ok":      (0.851, 0.933, 0.882, 1),
-    "chip_pend":    (0.996, 0.925, 0.804, 1),
+    "fundo":        (0.965, 0.973, 0.961, 1),  # F6F8F5  branco-verde suave
+    "verde":        (0.106, 0.545, 0.361, 1),  # 1B8B5C  pasto vivo (primária)
+    "verde_claro":  (0.271, 0.706, 0.494, 1),  # 45B47E  broto
+    "verde_escuro": (0.063, 0.353, 0.243, 1),  # 10593E  mata fechada
+    "terracota":    (0.902, 0.380, 0.220, 1),  # E66138  gravando (parar)
+    "azul":         (0.157, 0.451, 0.596, 1),  # 287398  nuvem/sincronizar
+    "marrom":       (0.451, 0.404, 0.337, 1),  # 736756  couro (neutro quente)
+    "cartao":       (1, 1, 1, 1),              # branco  leite
+    "texto":        (0.102, 0.141, 0.122, 1),  # 1A241F  quase preto esverdeado
+    "texto_suave":  (0.416, 0.451, 0.435, 1),  # 6A736F  cinza
+    "texto_campo":  (0.063, 0.353, 0.243, 1),  # verde escuro ao digitar
+    "borda":        (0.918, 0.933, 0.914, 1),  # EAEEEA  contorno bem suave
+    "chip_ok":      (0.851, 0.937, 0.886, 1),  # verde bem claro (sincronizado)
+    "chip_pend":    (0.996, 0.929, 0.812, 1),  # âmbar claro (pendente)
     "amarelo":      (0.945, 0.749, 0.259, 1),
+    "gravar":       (0.106, 0.545, 0.361, 1),  # microfone em repouso = verde
 }
 
 PALETA_ESCURA = {
-    "fundo":        (0.071, 0.086, 0.078, 1),
-    "verde":        (0.239, 0.573, 0.427, 1),
+    "fundo":        (0.063, 0.078, 0.071, 1),  # quase preto esverdeado
+    "verde":        (0.243, 0.647, 0.463, 1),  # 3EA576  mais vibrante no escuro
     "verde_claro":  (0.353, 0.749, 0.541, 1),
-    "verde_escuro": (0.156, 0.427, 0.318, 1),
-    "terracota":    (0.937, 0.427, 0.267, 1),
-    "azul":         (0.341, 0.612, 0.780, 1),
-    "marrom":       (0.596, 0.494, 0.408, 1),
-    "cartao":       (0.129, 0.149, 0.141, 1),
-    "texto":        (0.902, 0.918, 0.910, 1),
-    "texto_suave":  (0.639, 0.667, 0.651, 1),
-    "texto_campo":  (0.902, 0.918, 0.910, 1),
-    "borda":        (0.243, 0.271, 0.255, 1),
-    "chip_ok":      (0.851, 0.933, 0.882, 1),
-    "chip_pend":    (0.996, 0.925, 0.804, 1),
+    "verde_escuro": (0.180, 0.463, 0.337, 1),
+    "terracota":    (0.937, 0.451, 0.294, 1),
+    "azul":         (0.361, 0.627, 0.788, 1),
+    "marrom":       (0.612, 0.541, 0.451, 1),
+    "cartao":       (0.118, 0.137, 0.129, 1),  # card escuro
+    "texto":        (0.910, 0.925, 0.918, 1),  # quase branco
+    "texto_suave":  (0.612, 0.647, 0.631, 1),
+    "texto_campo":  (0.910, 0.925, 0.918, 1),
+    "borda":        (0.216, 0.243, 0.231, 1),
+    "chip_ok":      (0.851, 0.937, 0.886, 1),
+    "chip_pend":    (0.996, 0.929, 0.812, 1),
     "amarelo":      (0.976, 0.804, 0.333, 1),
+    "gravar":       (0.243, 0.647, 0.463, 1),
 }
 
 CORES = dict(PALETA_CLARA)  # dict MUTÁVEL — trocamos os valores ao mudar de tema

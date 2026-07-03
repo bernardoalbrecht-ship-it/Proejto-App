@@ -14,7 +14,7 @@ from vetvoice.presentation.dialogs import confirmar
 from vetvoice.presentation.theme import CORES, pintar_fundo, rotulo_icone
 from vetvoice.presentation.widgets import (
     Botao, Campo, Cartao, CartaoClicavel, RolagemComCampos, SeletorOpcoes,
-    cabecalho, chip, etiqueta, pagina, texto_livre,
+    chip, etiqueta, pagina, texto_livre, titulo_tela,
 )
 
 
@@ -23,10 +23,10 @@ class TelaHistorico(Screen):
         self.servicos = servicos
         super().__init__(**kwargs)
         raiz = pagina()
-        raiz.add_widget(cabecalho("Histórico", "Últimos atendimentos",
-                                  icone_nome="prancheta", com_voltar=True))
+        raiz.add_widget(titulo_tela("Histórico", "Seus atendimentos por fazenda"))
 
-        corpo = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
+        corpo = BoxLayout(orientation="vertical", padding=[dp(16), dp(8), dp(16),
+                          dp(12)], spacing=dp(12))
 
         # --- Seletor de propriedade (vacas mostradas por fazenda) ---
         self.propriedade_selecionada = ""
@@ -53,12 +53,6 @@ class TelaHistorico(Screen):
         self.lista.bind(minimum_height=self.lista.setter("height"))
         scroll.add_widget(self.lista)
         corpo.add_widget(scroll)
-
-        botao_voltar = Botao(texto="Voltar", cor=CORES["marrom"],
-                             size_hint_y=None, height=dp(50))
-        botao_voltar.bind(on_release=lambda *_: setattr(self.manager,
-                                                        "current", "inicial"))
-        corpo.add_widget(botao_voltar)
 
         raiz.add_widget(corpo)
         self.add_widget(raiz)

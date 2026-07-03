@@ -163,10 +163,13 @@ class BotaoGravarRedondo(ButtonBehavior, Widget):
         self.size = (diametro, diametro)
         self._ao_tocar = ao_tocar
         self._gravando = False
+        # Em repouso o miolo é verde (marca); ao gravar fica terracota, sinal de
+        # "toque para parar" (afordância de gravação ativa).
+        self._cor_base = CORES["gravar"]
         with self.canvas:
             self._cor_anel = Color(*CORES["borda"])
             self._anel = Line(width=dp(2.5))
-            self._cor_miolo = Color(*CORES["terracota"])
+            self._cor_miolo = Color(*self._cor_base)
             self._miolo = RoundedRectangle(radius=[diametro / 2.0])
         self.bind(pos=self._att, size=self._att)
         self._att()
@@ -188,13 +191,15 @@ class BotaoGravarRedondo(ButtonBehavior, Widget):
 
     def set_gravando(self, gravando):
         self._gravando = bool(gravando)
+        self._cor_base = CORES["terracota"] if self._gravando else CORES["gravar"]
+        self._cor_miolo.rgba = self._cor_base
         self._att()
 
     def on_press(self):
-        self._cor_miolo.rgba = escurecer(CORES["terracota"])
+        self._cor_miolo.rgba = escurecer(self._cor_base)
 
     def on_release(self):
-        self._cor_miolo.rgba = CORES["terracota"]
+        self._cor_miolo.rgba = self._cor_base
         desfocar_campos(Window)
         try:
             Window.release_all_keyboards()
@@ -356,3 +361,83 @@ def pagina():
     raiz = BoxLayout(orientation="vertical")
     pintar_fundo(raiz, CORES["fundo"], raio=0)
     return raiz
+
+
+def titulo_tela(titulo, subtitulo=""):
+    """Cabeçalho leve (sem barra verde nem botão de voltar) para as abas —
+    a navegação fica na barra inferior. Título grande + subtítulo discreto."""
+    caixa = BoxLayout(orientation="vertical", size_hint_y=None,
+                      padding=[dp(20), dp(18), dp(20), dp(6)], spacing=dp(2))
+    caixa.bind(minimum_height=caixa.setter("height"))
+    caixa.add_widget(texto_livre("[b]%s[/b]" % titulo, cor=CORES["texto"],
+                                 tamanho="24sp", altura=dp(34)))
+    if subtitulo:
+        caixa.add_widget(texto_livre(subtitulo, cor=CORES["texto_suave"],
+                                     tamanho="13sp", altura=dp(20)))
+    return caixa
+
+
+class _ItemNav(ButtonBehavior, BoxLayout):
+    """Uma aba da barra inferior: ícone + rótulo, que muda de cor quando ativa."""
+    def __init__(self, nome, icone_nome, rotulo, ao_tocar, **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("spacing", dp(2))
+        kwargs.setdefault("padding", [0, dp(8), 0, dp(6)])
+        super().__init__(**kwargs)
+        self.nome = nome
+        self._ao_tocar = ao_tocar
+
+        centro = AnchorLayout(anchor_x="center", anchor_y="center")
+        self.ic = icone(icone_nome, tamanho="24sp", cor=CORES["texto_suave"])
+        centro.add_widget(self.ic)
+        self.add_widget(centro)
+
+        self.txt = Label(text=rotulo, font_size="11sp", color=CORES["texto_suave"],
+                         size_hint_y=None, height=dp(16), halign="center",
+                         valign="middle")
+        self.txt.bind(size=self.txt.setter("text_size"))
+        self.add_widget(self.txt)
+
+    def set_ativo(self, ativo):
+        cor = CORES["verde"] if ativo else CORES["texto_suave"]
+        self.ic.color = cor
+        self.txt.color = cor
+        self.txt.bold = bool(ativo)
+
+    def on_release(self):
+        if self._ao_tocar:
+            self._ao_tocar(self.nome)
+
+
+class BottomNav(BoxLayout):
+    """Barra de navegação inferior fixa (Início / Histórico / Ajustes)."""
+    ABAS = (("inicial", "casa", "Início"),
+            ("historico", "prancheta", "Histórico"),
+            ("config", "engrenagem", "Ajustes"))
+
+    def __init__(self, ao_selecionar, **kwargs):
+        kwargs.setdefault("orientation", "horizontal")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(62))
+        super().__init__(**kwargs)
+        pintar_fundo(self, CORES["cartao"], raio=0)
+        # Hairline no topo, separando a barra do conteúdo.
+        with self.canvas.after:
+            self._cor_linha = Color(*CORES["borda"])
+            self._linha_topo = Line(width=1)
+        self.bind(pos=self._att_linha, size=self._att_linha)
+
+        self._itens = {}
+        for nome, ic, rotulo in self.ABAS:
+            item = _ItemNav(nome, ic, rotulo, ao_selecionar)
+            self._itens[nome] = item
+            self.add_widget(item)
+
+    def _att_linha(self, *_):
+        x, y = self.pos
+        w, h = self.size
+        self._linha_topo.points = [x, y + h, x + w, y + h]
+
+    def set_ativo(self, nome):
+        for n, item in self._itens.items():
+            item.set_ativo(n == nome)
