@@ -367,32 +367,34 @@ class RolagemComCampos(ScrollView):
     """
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            campo = self._campo_sob_toque(self, touch.pos[0], touch.pos[1])
-            if campo is not None:
-                campo.focus = True
-                # Entrega o toque DIRETO ao campo (para posicionar o cursor)
-                # e CONSOME o evento (return True). Assim o ScrollView nunca
-                # "segura" e redistribui esse toque — era essa redistribuição,
-                # na hora de soltar o dedo, que tirava o foco do campo e
-                # fechava o teclado no Android.
+            alvo = self._alvo_sob_toque(self, touch.pos[0], touch.pos[1])
+            if alvo is not None:
+                if isinstance(alvo, TextInput):
+                    alvo.focus = True
+                # Entrega o toque DIRETO ao widget (campo de texto OU botão de
+                # gravar) e CONSOME o evento (return True). Assim o ScrollView
+                # nunca "segura" e redistribui esse toque — era essa espera que
+                # exigia manter o dedo pressionado, tanto para digitar quanto
+                # para gravar. Agora o primeiro toque já responde.
                 touch.push()
                 touch.apply_transform_2d(self.to_local)
                 try:
-                    campo.on_touch_down(touch)
+                    alvo.on_touch_down(touch)
                 finally:
                     touch.pop()
                 return True
         return super().on_touch_down(touch)
 
-    def _campo_sob_toque(self, widget, tx, ty):
-        # Procura de cima para baixo o campo de texto sob o toque.
-        # Usa coordenadas ABSOLUTAS de janela (to_window) para funcionar mesmo
-        # com o conteúdo rolado. Retorna o próprio campo (ou None).
+    def _alvo_sob_toque(self, widget, tx, ty):
+        # Procura de cima para baixo um widget "interativo" sob o toque: um
+        # campo de texto (para focar) ou o botão redondo de gravar (para
+        # disparar na hora). Usa coordenadas ABSOLUTAS de janela (to_window)
+        # para funcionar mesmo com o conteúdo rolado. Retorna o widget ou None.
         for filho in widget.children:
-            achado = self._campo_sob_toque(filho, tx, ty)
+            achado = self._alvo_sob_toque(filho, tx, ty)
             if achado is not None:
                 return achado
-        if isinstance(widget, TextInput) and not widget.disabled:
+        if isinstance(widget, (TextInput, BotaoGravarRedondo)) and not widget.disabled:
             wx, wy = widget.to_window(widget.x, widget.y)
             if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
                 return widget
