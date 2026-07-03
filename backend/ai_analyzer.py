@@ -300,24 +300,13 @@ def _analisar_com_regras(transcricao: str) -> dict:
         if _bate(texto, chave, tokens):
             resultado["diagnostico"] = nome
             break
+    # Nenhum diagnóstico da lista bateu? Tenta um texto livre (vira "Outro").
+    if not resultado["diagnostico"]:
+        resultado["diagnostico"] = _extrair_diagnostico_livre(texto)
 
     # Medicações/insumos citados (evita falso positivo: medicação não vira
     # diagnóstico nem se mistura com outros campos)
-    encontrados = []
-    vistos = set()
-    for chave, nome_bonito in MEDICACOES.items():
-        if _bate(texto, chave, tokens) and nome_bonito not in vistos:
-            encontrados.append(nome_bonito)
-            vistos.add(nome_bonito)
-    medicacoes = ", ".join(encontrados)
-    # Doses ditas na fala (ex.: "5ml de corticoide", "10 mg", "2 cc").
-    doses = [d.replace(" ", "") for d in
-             re.findall(r"\b(\d+\s*(?:ml|mg|cc|ui|l))\b", texto)]
-    if doses:
-        etiqueta_dose = ", ".join(doses)
-        medicacoes = ("%s (%s)" % (medicacoes, etiqueta_dose)
-                      if medicacoes else etiqueta_dose)
-    resultado["medicacoes"] = medicacoes
+    resultado["medicacoes"] = _extrair_medicacoes(texto, tokens)
 
     # Próxima ação sugerida
     resultado["proxima_acao"] = PROXIMA_ACAO.get(resultado["procedimento"], "")
@@ -331,24 +320,41 @@ _PALAVRAS_PROPRIEDADE = (
     "granja", "haras", "estância", "estancia", "rancho", "chácara", "chacara",
 )
 # Palavras que ENCERRAM o nome da propriedade (conectores / resto da frase).
+# Inclui verbos/termos clínicos que costumam vir logo após o nome — foi o que
+# fazia "propriedade josé feito iatf" virar o nome inteiro; agora para em
+# "feito"/"iatf" e devolve só "José".
 _PARADAS_PROPRIEDADE = {
     "e", "na", "no", "da", "do", "de", "dentro", "vaca", "vaquinha", "brinco",
     "animal", "com", "que", "adicionar", "adiciona", "coloca", "colocar",
-    "anota", "anotar", "registrar", "registra", "fiz", "apliquei",
+    "anota", "anotar", "registrar", "registra", "fiz", "apliquei", "feito",
+    "fez", "fazer", "iatf", "ia", "prenha", "prenhe", "vazia", "diagnóstico",
+    "diagnostico", "aplicar", "apliquei", "dei", "deu", "novilha", "primípara",
+    "primipara", "multípara", "multipara",
 }
+
+
+def _palavra_clinica(token: str) -> bool:
+    """True se a palavra é um termo clínico conhecido (procedimento, status,
+    diagnóstico, medicação, raça) — não deve virar parte do nome da fazenda."""
+    for dicionario in (PROCEDIMENTOS, STATUS, DIAGNOSTICOS, MEDICACOES, RACAS):
+        for chave in dicionario:
+            if " " not in chave and token == chave:
+                return True
+    return False
 
 
 def _extrair_propriedade(texto: str) -> str:
     """Procura 'cabanha X', 'fazenda Boa Vista', 'sítio do João'... e devolve
-    o nome (até 3 palavras), parando em conectores como 'e', 'na', 'dentro',
-    'vaca'. Devolve '' se não encontrar."""
+    o nome (até 3 palavras), parando em conectores ('e', 'na', 'dentro',
+    'vaca'...) e em termos clínicos ('iatf', 'feito', 'mastite'...). Devolve
+    '' se não encontrar."""
     for palavra in _PALAVRAS_PROPRIEDADE:
         encontro = re.search(r"\b%s\s+(.+)" % palavra, texto)
         if not encontro:
             continue
         nome = []
         for token in _tokens(encontro.group(1)):
-            if token in _PARADAS_PROPRIEDADE:
+            if token in _PARADAS_PROPRIEDADE or _palavra_clinica(token):
                 break
             nome.append(token)
             if len(nome) >= 3:
@@ -356,6 +362,78 @@ def _extrair_propriedade(texto: str) -> str:
         if nome:
             return " ".join(p.capitalize() for p in nome)
     return ""
+
+
+# ---------------------------------------------------------------------------
+# MEDICAÇÕES — reconhece QUALQUER remédio citado ao lado de uma dose, não só
+# os do dicionário (ex.: "metronidazol 3ml" -> "Metronidazol 3ml").
+# ---------------------------------------------------------------------------
+_UNID_MED = r"(?:ml|mg|mcg|cc|ui|g)"
+
+# Palavras que, mesmo perto de uma dose, NÃO são nome de medicação.
+_NAO_E_DROGA = {
+    "de", "da", "do", "com", "e", "que", "fiz", "apliquei", "dei", "deu",
+    "dar", "via", "por", "uma", "um", "na", "no", "nas", "nos", "dose",
+    "doses", "vaca", "vacas", "brinco", "animal", "hoje", "agora", "total",
+    "cada", "apenas", "so", "só", "tomou", "recebeu", "aplicar", "pesa",
+    "peso", "kg", "anos", "ano", "idade",
+    # categorias do animal não são remédio (evita "Novilha 5ml")
+    "bezerra", "bezerro", "terneira", "terneiro", "novilha", "novilhas",
+    "novilho", "primípara", "primipara", "secundípara", "secundipara",
+    "multípara", "multipara", "nulípara", "nulipara",
+}
+
+
+def _canonizar_droga(palavra: str) -> str:
+    """Nome 'bonito' de uma droga: usa o nome canônico se ela (ou algo bem
+    parecido) está no dicionário conhecido; senão capitaliza a própria palavra,
+    para medicações fora da lista (como 'metronidazol') também entrarem."""
+    p = palavra.lower()
+    if p in MEDICACOES:
+        return MEDICACOES[p]
+    for chave, nome in MEDICACOES.items():
+        if " " not in chave and len(chave) >= TAMANHO_MINIMO_PARA_FUZZY:
+            tolerancia = _erros_tolerados(len(chave))
+            if (abs(len(chave) - len(p)) <= tolerancia
+                    and _distancia_edicao(p, chave) <= tolerancia):
+                return nome
+    return palavra[:1].upper() + palavra[1:]
+
+
+def _extrair_medicacoes(texto: str, tokens: list) -> str:
+    """Extrai as medicações citadas com suas doses. Além do dicionário de
+    fármacos conhecidos, captura a palavra ao lado de uma dose — assim
+    remédios fora da lista também entram. Ex.: 'metronidazol 3ml, 5ml de
+    corticoide' -> 'Metronidazol 3ml, Corticoide 5ml'."""
+    ordem = []          # nomes na ordem de aparição
+    dose_de = {}        # nome -> dose
+
+    def registrar(nome, dose=None):
+        if not nome or nome.lower() in _NAO_E_DROGA:
+            return
+        if nome not in ordem:
+            ordem.append(nome)
+        if dose and nome not in dose_de:
+            dose_de[nome] = dose
+
+    # 1) Droga ANTES da dose: "metronidazol 3ml"
+    for m in re.finditer(r"([a-zà-ÿ]{4,})\s+(\d+(?:[.,]\d+)?)\s*(%s)\b"
+                         % _UNID_MED, texto):
+        registrar(_canonizar_droga(m.group(1)), m.group(2) + m.group(3))
+    # 2) Droga DEPOIS da dose: "5ml de corticoide" / "5 ml corticoide"
+    for m in re.finditer(r"(\d+(?:[.,]\d+)?)\s*(%s)\s+(?:de\s+)?([a-zà-ÿ]{4,})\b"
+                         % _UNID_MED, texto):
+        registrar(_canonizar_droga(m.group(3)), m.group(1) + m.group(2))
+    # 3) Fármacos conhecidos citados SEM dose (ex.: "apliquei antibiótico").
+    for chave, nome in MEDICACOES.items():
+        if _bate(texto, chave, tokens):
+            registrar(nome)
+
+    partes = []
+    for nome in ordem:
+        dose = dose_de.get(nome)
+        partes.append("%s %s" % (nome, dose) if dose else nome)
+    return ", ".join(partes)
 
 
 def _extrair_id_vaca(texto: str) -> str:
@@ -386,8 +464,23 @@ def _extrair_peso(texto: str) -> str:
     return padrao.group(1) if padrao else ""
 
 
+# Categorias/estágios do animal — quando não se diz a idade em números, o
+# veterinário costuma dizer a categoria (novilha, primípara...). Reconhecemos
+# e colocamos no campo Idade, que aceita texto.
+_CATEGORIAS_ANIMAL = {
+    "bezerra": "Bezerra", "bezerro": "Bezerro", "terneira": "Terneira",
+    "terneiro": "Terneiro", "novilha": "Novilha", "novilhas": "Novilha",
+    "novilho": "Novilho", "primípara": "Primípara", "primipara": "Primípara",
+    "secundípara": "Secundípara", "secundipara": "Secundípara",
+    "multípara": "Multípara", "multipara": "Multípara",
+    "nulípara": "Nulípara", "nulipara": "Nulípara",
+    "vaca adulta": "Vaca adulta",
+}
+
+
 def _extrair_idade(texto: str) -> str:
-    """Procura a idade em anos: '3 anos', 'idade 4', 'com dois anos'..."""
+    """Procura a idade em anos ('3 anos', 'idade 4', 'com dois anos') OU, na
+    falta de número, a CATEGORIA do animal ('novilha', 'primípara'...)."""
     padrao = re.search(r"(\d{1,2})\s*anos?\b", texto)
     if padrao:
         return padrao.group(1)
@@ -396,7 +489,49 @@ def _extrair_idade(texto: str) -> str:
     if padrao and padrao.group(1) in _NUMEROS_EXTENSO:
         return _NUMEROS_EXTENSO[padrao.group(1)]
     padrao = re.search(r"idade\s+(?:de\s+)?(\d{1,2})", texto)
-    return padrao.group(1) if padrao else ""
+    if padrao:
+        return padrao.group(1)
+    # Sem número: tenta a categoria do animal.
+    tokens = _tokens(texto)
+    for chave, rotulo in _CATEGORIAS_ANIMAL.items():
+        if _bate(texto, chave, tokens):
+            return rotulo
+    return ""
+
+
+# Termos que costumam anunciar um diagnóstico dito em texto livre.
+_ANUNCIO_DIAGNOSTICO = (
+    "diagnóstico de", "diagnostico de", "diagnóstico", "diagnostico",
+    "diagnostiquei", "suspeita de", "quadro de", "apresenta", "apresentou",
+    "com quadro de",
+)
+
+
+def _extrair_diagnostico_livre(texto: str) -> str:
+    """Quando NENHUM diagnóstico conhecido bate, tenta pegar o que foi dito em
+    texto livre depois de 'diagnóstico', 'suspeita de'... (até 4 palavras,
+    parando em conectores). Serve para marcar 'Outro' e escrever o texto."""
+    paradas = {"e", "na", "no", "da", "do", "com", "que", "vaca", "fiz",
+               "apliquei", "aplicar", "dei", "deu", "dar", "medicação",
+               "medicacao", "prenha", "prenhe", "vazia", "próxima", "proxima",
+               "ml", "mg", "cc", "ui", "mcg"}
+    for anuncio in _ANUNCIO_DIAGNOSTICO:
+        encontro = re.search(r"\b%s\s+(.+)" % re.escape(anuncio), texto)
+        if not encontro:
+            continue
+        palavras = []
+        for token in _tokens(encontro.group(1)):
+            # Para em conectores, em medicações/termos clínicos conhecidos
+            # (ex.: "penicilina") e nas unidades de dose.
+            if token in paradas or _palavra_clinica(token):
+                break
+            palavras.append(token)
+            if len(palavras) >= 4:
+                break
+        if palavras:
+            frase = " ".join(palavras)
+            return frase[:1].upper() + frase[1:]
+    return ""
 
 
 # ---------------------------------------------------------------------------

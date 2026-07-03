@@ -245,14 +245,23 @@ def login(callback_sucesso=None, callback_erro=None, timeout: float = 300.0):
         try:
             servidor = _ColetorCode(("127.0.0.1", 0), _Handler)
             servidor.evento = threading.Event()
+            servidor.timeout = 1  # não bloquear para sempre em cada requisição
             porta = servidor.server_address[1]
 
             verifier, desafio = _pkce()
             state = secrets.token_urlsafe(16)
             url = _montar_url_auth(cfg, porta, desafio, state)
 
-            # Atende exatamente um redirecionamento, numa thread própria.
-            threading.Thread(target=servidor.handle_request, daemon=True).start()
+            # Fica atendendo requisições até chegar o redirecionamento com o
+            # 'code'. (Um único handle_request podia ser "gasto" por um pedido
+            # de favicon do navegador e perder o code — por isso o laço.)
+            def _servir():
+                while not servidor.evento.is_set():
+                    try:
+                        servidor.handle_request()
+                    except Exception:
+                        break
+            threading.Thread(target=_servir, daemon=True).start()
             _abrir_navegador(url)
 
             if not servidor.evento.wait(timeout):

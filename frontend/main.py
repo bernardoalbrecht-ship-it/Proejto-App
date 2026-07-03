@@ -1369,9 +1369,12 @@ class TelaAtendimento(Screen):
                 # Diagnóstico ganha atalhos (chips) para os casos mais comuns,
                 # mas continua editável em texto livre para detalhar o caso.
                 entrada = Campo(multiline=True, size_hint_y=None, height=dp(64))
+                # Ao tocar "Outro", LIMPA o campo para o veterinário escrever o
+                # diagnóstico à mão; nas demais opções, preenche com o nome.
                 self.seletor_diagnostico = SeletorOpcoes(
                     config.DIAGNOSTICO_OPCOES, cols=2,
-                    ao_selecionar=lambda v, e=entrada: setattr(e, "text", v))
+                    ao_selecionar=lambda v, e=entrada: setattr(
+                        e, "text", "" if v == "Outro" else v))
                 ficha.add_widget(self.seletor_diagnostico)
                 ficha.add_widget(entrada)
 
@@ -1444,9 +1447,15 @@ class TelaAtendimento(Screen):
         if campos.get("status_reprodutivo"):
             self.seletor_status.selecionar(campos["status_reprodutivo"],
                                            disparar_callback=False)
-        if campos.get("diagnostico"):
-            self.seletor_diagnostico.selecionar(campos["diagnostico"],
-                                                disparar_callback=False)
+        diag = campos.get("diagnostico", "")
+        if diag:
+            if diag in config.DIAGNOSTICO_OPCOES:
+                self.seletor_diagnostico.selecionar(diag, disparar_callback=False)
+            else:
+                # Diagnóstico fora da lista: marca "Outro" e mantém o texto
+                # livre no campo (que o loop acima já preencheu).
+                self.seletor_diagnostico.selecionar("Outro", disparar_callback=False)
+                self.campos["diagnostico"].text = diag
 
     def salvar(self, *_):
         if not self.campo_id.text.strip():
