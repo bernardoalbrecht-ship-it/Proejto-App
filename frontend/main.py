@@ -399,6 +399,15 @@ class RolagemComCampos(ScrollView):
         return None
 
 
+def _desfocar_campos(widget):
+    """Percorre a árvore de widgets e tira o foco de todo campo de texto.
+    Usado para recolher o teclado antes de começar uma gravação."""
+    for filho in widget.children:
+        _desfocar_campos(filho)
+    if isinstance(widget, TextInput) and widget.focus:
+        widget.focus = False
+
+
 class BotaoGravarRedondo(Widget):
     """Botão de gravação estilo "câmera de vídeo": um CÍRCULO vermelho que,
     ao começar a gravar, vira um QUADRADO (toque para parar).
@@ -451,6 +460,15 @@ class BotaoGravarRedondo(Widget):
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
+            # Antes de gravar, recolhe o teclado e tira o foco de qualquer
+            # campo de texto. Assim a tela volta à posição normal (sem o
+            # deslocamento do teclado) e o círculo/quadrado fica sempre
+            # visível durante a gravação.
+            _desfocar_campos(Window)
+            try:
+                Window.release_all_keyboards()
+            except Exception:
+                pass
             if self._ao_tocar is not None:
                 self._ao_tocar(self)
             return True
@@ -1753,10 +1771,14 @@ class AppVeterinaria(App):
            usuário veja o diálogo de permissão do sistema.
         """
         try:
-            # 'pan' empurra a janela inteira para cima quando o teclado abre,
-            # sem refazer o layout (o 'below_target' fazia um relayout que às
-            # vezes tirava o foco do campo — sensação de "a barra volta atrás").
-            Window.softinput_mode = "pan"
+            # 'below_target': desloca a tela SOMENTE o necessário para o campo
+            # focado ficar logo acima do teclado. O 'pan' empurrava a janela
+            # inteira pela altura do teclado e, dependendo da posição do campo
+            # (ex.: o de adicionar propriedade, mais no topo), jogava justamente
+            # o campo digitado para fora da tela. O antigo problema de "perder o
+            # foco" no below_target vinha do ScrollView e já foi resolvido em
+            # RolagemComCampos.
+            Window.softinput_mode = "below_target"
         except Exception:
             pass
 
