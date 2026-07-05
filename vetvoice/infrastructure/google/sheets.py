@@ -1,72 +1,32 @@
 """
-google_sheets_sync.py
----------------------
-Envia os atendimentos guardados no aparelho para uma planilha no Google
-Sheets, DENTRO DO DRIVE DO PRÓPRIO USUÁRIO (via login com Google / OAuth).
-
-Cada PROPRIEDADE/FAZENDA ganha a sua própria planilha. A cada sincronização,
-os atendimentos ainda não enviados (sincronizado = 0) são acrescentados como
-novas linhas — então a planilha "se atualiza" toda vez que você sincroniza.
+google/sheets.py
+----------------
+Envia atendimentos para uma planilha no Google Sheets, dentro do Drive do
+PRÓPRIO usuário (via login OAuth). Cada propriedade/fazenda ganha a sua própria
+planilha; a cada envio, as linhas são acrescentadas.
 
 Falamos com as APIs do Google por REST (urllib), sem bibliotecas pesadas.
 
-Lógica "offline-first":
-  - Tudo é salvo primeiro no banco local (sempre funciona).
-  - Se o usuário estiver logado no Google, sincronizar() envia os pendentes.
-  - Se NÃO estiver logado, cai no modo simulado (só marca como sincronizado
-    localmente), para o app continuar utilizável sem a nuvem.
+`ServicoNuvemGoogle` implementa a porta `ServicoNuvem`. Diferente da versão
+antiga, ele NÃO lê o banco nem marca como sincronizado — isso é
+responsabilidade do caso de uso `SincronizarAtendimentos`. Aqui só empurramos
+as linhas dos atendimentos recebidos.
 """
 
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import List
 
-from backend import config, database, google_auth
-from backend.config import COLUNAS, COLUNAS_EXIBICAO
+from vetvoice.domain.entities import Atendimento
+from vetvoice.domain.ports import ServicoNuvem
+from vetvoice.infrastructure.google import auth
+from vetvoice.shared import config
+from vetvoice.shared.config import COLUNAS, COLUNAS_EXIBICAO
 
 _SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
 _DRIVE_API = "https://www.googleapis.com/drive/v3/files"
-
-
-def sincronizar(propriedade: str) -> dict:
-    """Envia os atendimentos pendentes para a planilha da propriedade.
-    Retorna um resumo: {enviados, erros, modo}."""
-    pendentes = database.listar_nao_sincronizados()
-
-    # Sem login no Google -> modo simulado (não trava o app).
-    if not google_auth.esta_logado():
-        for atendimento in pendentes:
-            database.marcar_como_sincronizado(atendimento.id_banco)
-        return {"enviados": len(pendentes), "erros": 0, "modo": "simulado"}
-
-    token = google_auth.obter_token_valido()
-    if not token:
-        return {"enviados": 0, "erros": 1, "modo": "real",
-                "detalhe": "Sessão do Google expirou. Entre novamente."}
-
-    try:
-        planilha_id = _abrir_ou_criar_planilha(propriedade, token)
-    except Exception as erro:
-        return {"enviados": 0, "erros": 1, "modo": "real", "detalhe": str(erro)}
-
-    if not pendentes:
-        return {"enviados": 0, "erros": 0, "modo": "real",
-                "link": _link_planilha(planilha_id)}
-
-    linhas = [[str(getattr(a, coluna, "") or "") for coluna in COLUNAS]
-              for a in pendentes]
-    try:
-        _append_linhas(planilha_id, linhas, token)
-    except Exception as erro:
-        return {"enviados": 0, "erros": len(pendentes), "modo": "real",
-                "detalhe": str(erro)}
-
-    for atendimento in pendentes:
-        database.marcar_como_sincronizado(atendimento.id_banco)
-
-    return {"enviados": len(pendentes), "erros": 0, "modo": "real",
-            "link": _link_planilha(planilha_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +47,7 @@ def _requisicao(url, token, metodo="GET", corpo=None):
 
 
 def _nome_planilha(propriedade: str) -> str:
-    return "VetSheets - %s" % (propriedade or "Sem nome").strip()
+    return "VetVoice - %s" % (propriedade or "Sem nome").strip()
 
 
 def _link_planilha(planilha_id: str) -> str:
@@ -111,16 +71,13 @@ def _salvar_indice(indice):
 
 
 def _abrir_ou_criar_planilha(propriedade: str, token: str) -> str:
-    """Devolve o ID da planilha da propriedade, criando-a (com cabeçalho) na
-    primeira vez. Guarda o ID num índice local para acelerar as próximas."""
+    """ID da planilha da propriedade, criando-a (com cabeçalho) na 1ª vez."""
     nome = _nome_planilha(propriedade)
 
-    # 1) Já criamos antes? (índice local por aparelho)
     indice = _ler_indice()
     if nome in indice:
         return indice[nome]
 
-    # 2) Procura no Drive uma planilha com esse nome criada por este app.
     consulta = ("name = '%s' and "
                 "mimeType = 'application/vnd.google-apps.spreadsheet' and "
                 "trashed = false") % nome.replace("'", "\\'")
@@ -132,7 +89,6 @@ def _abrir_ou_criar_planilha(propriedade: str, token: str) -> str:
         _salvar_indice(indice)
         return achados[0]["id"]
 
-    # 3) Não existe: cria a planilha e escreve o cabeçalho.
     criada = _requisicao(_SHEETS_API, token, metodo="POST",
                          corpo={"properties": {"title": nome}})
     planilha_id = criada["spreadsheetId"]
@@ -149,3 +105,31 @@ def _append_linhas(planilha_id: str, linhas, token: str):
         _SHEETS_API, planilha_id,
         urllib.parse.urlencode({"valueInputOption": "USER_ENTERED"})))
     _requisicao(url, token, metodo="POST", corpo={"values": linhas})
+
+
+class ServicoNuvemGoogle(ServicoNuvem):
+    """Implementação da porta `ServicoNuvem` sobre o Google Sheets."""
+
+    def esta_disponivel(self) -> bool:
+        return auth.esta_logado()
+
+    def enviar(self, propriedade: str,
+               atendimentos: List[Atendimento]) -> dict:
+        token = auth.obter_token_valido()
+        if not token:
+            return {"ok": False,
+                    "detalhe": "Sessão do Google expirou. Entre novamente."}
+        try:
+            planilha_id = _abrir_ou_criar_planilha(propriedade, token)
+        except Exception as erro:
+            return {"ok": False, "detalhe": str(erro)}
+
+        if atendimentos:
+            linhas = [[str(getattr(a, coluna, "") or "") for coluna in COLUNAS]
+                      for a in atendimentos]
+            try:
+                _append_linhas(planilha_id, linhas, token)
+            except Exception as erro:
+                return {"ok": False, "detalhe": str(erro)}
+
+        return {"ok": True, "link": _link_planilha(planilha_id)}

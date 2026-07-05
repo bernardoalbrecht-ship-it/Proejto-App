@@ -17,27 +17,37 @@ Por padrão o app vem em **MODO DE TESTE**, que é gratuito:
 - Dados salvos localmente no aparelho (banco SQLite).
 - Se o microfone não pegar, você pode **digitar a frase** e o app preenche os campos.
 
-Quando quiser, é só ativar os recursos da nuvem no arquivo `backend/config.py`.
+Quando quiser, é só ativar os recursos da nuvem no arquivo `vetvoice/shared/config.py`.
 
 ---
 
-## 📁 Estrutura do projeto
+## 📁 Estrutura do projeto (Clean Architecture)
+
+As dependências apontam sempre para dentro: a interface usa os casos de uso, que
+usam o domínio; a infraestrutura implementa as *portas* do domínio. Nenhuma regra
+de negócio vive na interface.
 
 ```
-veterinaria/
-├── main.py                    # ponto de entrada (usado pelo .exe e APK)
-├── requirements.txt           # lista de bibliotecas
-├── buildozer.spec             # configuração para gerar o APK Android
-├── backend/                   # a "lógica" do sistema
-│   ├── config.py              # LIGA/DESLIGA recursos (nuvem, IA)
-│   ├── models.py              # estrutura de um atendimento
-│   ├── database.py            # banco de dados local (SQLite)
-│   ├── audio_processor.py     # transforma fala em texto
-│   ├── ai_analyzer.py         # organiza o texto em campos
-│   ├── google_sheets_sync.py  # envia para a nuvem
-│   └── seed_data.py           # dados fictícios para testar
-└── frontend/                  # as telas do app (Kivy)
-    └── main.py                # interface gráfica
+vetvoice/
+├── shared/config.py               # LIGA/DESLIGA recursos, caminhos, colunas
+├── domain/                        # regras de negócio (sem framework)
+│   ├── entities.py                # Atendimento
+│   ├── ports.py                   # interfaces (repositórios e serviços)
+│   └── parsing/                   # parser híbrido (dicionários + regex + contexto)
+├── application/                   # casos de uso (orquestração)
+│   ├── analise.py  atendimentos.py  propriedades.py
+│   ├── sincronizacao.py  autenticacao.py  sessao.py  servicos.py
+├── infrastructure/                # implementações concretas
+│   ├── persistence/sqlite.py      # banco local (SQLite) + seed.py
+│   ├── speech/transcritor.py      # transforma fala em texto (Vosk/Android)
+│   ├── google/auth.py  google/sheets.py   # login + envio à nuvem
+│   └── nlp_openai.py              # parser opcional com GPT
+├── presentation/                  # telas Kivy (Windows/Android)
+│   ├── theme.py  widgets.py  dialogs.py  gravacao.py
+│   └── screens/  app.py
+└── composition.py                 # monta e injeta as dependências reais
+main.py                            # ponto de entrada (.exe e APK) -> presentation.app
+tests/                             # test_parser.py, test_fluxo.py
 ```
 
 ---
@@ -58,7 +68,7 @@ pip install -r requirements.txt
 ### 3. (Opcional) Colocar dados de exemplo
 Para já ver atendimentos no histórico:
 ```bash
-python -m backend.seed_data
+python -m vetvoice.infrastructure.persistence.seed
 ```
 
 ### 4. Abrir o app
@@ -110,7 +120,7 @@ O arquivo `buildozer.spec` já vem configurado com as permissões de **microfone
 
 ## ☁️ Como ativar a nuvem (opcional, quando estiver pronto)
 
-Abra `backend/config.py` e mude de `False` para `True` o que quiser usar:
+Abra `vetvoice/shared/config.py` e mude de `False` para `True` o que quiser usar:
 
 | Opção | O que ativa | Precisa de |
 |-------|-------------|-----------|

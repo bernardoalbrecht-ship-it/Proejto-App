@@ -1,7 +1,7 @@
 [app]
 
 # Nome que aparece no celular
-title = VetSheets
+title = VetVoice
 
 # Nome do pacote (sem espaços, sem acentos)
 package.name = atendimentovet
@@ -26,7 +26,7 @@ requirements = python3,kivy,openpyxl,plyer
 android.accept_sdk_license = True
 
 # Arquivo principal a ser executado
-# (aponta para frontend/main.py)
+# (main.py na raiz inicia vetvoice/presentation/app.py)
 # O Buildozer procura main.py na raiz; veja a nota no README sobre isso.
 
 # Orientação da tela

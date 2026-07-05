@@ -1,20 +1,14 @@
 """
-audio_processor.py
-------------------
-Responsável por transformar a FALA do veterinário em TEXTO.
+speech/transcritor.py
+---------------------
+Transforma a FALA do veterinário em TEXTO, com estes modos (em ordem de
+preferência):
+  1) TEMPO REAL (Vosk, offline): escreve a frase na tela enquanto se fala.
+  2) RESERVA (speech_recognition + Google Web): transcreve após o silêncio.
+  3) PROFISSIONAL (Google Cloud Speech): pago, mais preciso.
+No Android, usa o SpeechRecognizer nativo (ao vivo, preferência offline).
 
-Modos disponíveis, em ordem de preferência:
-  1) TEMPO REAL (Vosk, offline, gratuito): vai ESCREVENDO a frase na tela
-     enquanto o veterinário fala (igual legenda ao vivo), sem precisar de
-     internet. Usa um modelo pequeno (~50MB) que já vem no projeto. Ativa por
-     padrão (USAR_VOSK_TEMPO_REAL = True no config.py); se o modelo ou o
-     pacote 'vosk' não estiverem disponíveis, cai automaticamente para o modo
-     gratuito abaixo.
-  2) MODO GRATUITO (reserva): usa a biblioteca 'speech_recognition' com o
-     serviço gratuito do Google Web. Só transcreve DEPOIS que a pessoa para
-     de falar (não é ao vivo) e precisa de internet.
-  3) MODO PROFISSIONAL: usa o Google Cloud Speech-to-Text (pago, mais
-     preciso). Ativa quando USAR_GOOGLE_CLOUD_SPEECH = True no config.py.
+`TranscritorVoz` implementa a porta `Transcritor` do domínio.
 """
 
 import json
@@ -22,40 +16,21 @@ import os
 import threading
 import time
 
-from backend import config
+from vetvoice.domain.ports import Transcritor
+from vetvoice.shared import config
 
 _MODELO_VOSK = None  # cache: o modelo só é carregado uma vez por execução
-
-
-def _no_android() -> bool:
-    """True quando o código está rodando dentro do APK (python-for-android
-    define a variável de ambiente ANDROID_ARGUMENT). Serve para escolher o
-    caminho de áudio nativo do celular em vez do pyaudio/vosk do desktop."""
-    return "ANDROID_ARGUMENT" in os.environ
-
-
-# ===========================================================================
-# TRANSCRIÇÃO AO VIVO — API única usada pela interface
-# ---------------------------------------------------------------------------
-# iniciar_transcricao_ao_vivo(...) começa a ouvir e devolve uma "sessão" com
-# um método .parar(). Enquanto ouve, chama callback_parcial(texto) várias
-# vezes (legenda ao vivo) e, ao terminar, callback_final(texto). Se algo der
-# errado, callback_erro(codigo_ou_mensagem).
-#
-#   • No ANDROID: usa android.speech.SpeechRecognizer (motor do sistema), com
-#     resultados PARCIAIS (ao vivo) e preferência OFFLINE quando o pacote de
-#     voz em português está instalado no aparelho.
-#   • No DESKTOP: usa o Vosk (offline) numa thread, com um sinal de parada.
-# ===========================================================================
-
-# Mantém referências vivas dos objetos Java enquanto a gravação acontece
-# (o coletor de lixo do Python não pode recolher o listener no meio do uso).
 _SESSAO_ATIVA = None
 
 
+def _no_android() -> bool:
+    """True quando roda dentro do APK (python-for-android define ANDROID_ARGUMENT)."""
+    return "ANDROID_ARGUMENT" in os.environ
+
+
 def mensagem_erro_audio(codigo) -> str:
-    """Traduz o código de erro do SpeechRecognizer do Android (int) numa
-    explicação em português. Para o desktop, o 'codigo' já é um texto."""
+    """Traduz o código de erro do SpeechRecognizer do Android para português.
+    No desktop, o 'codigo' já é um texto."""
     mapa = {
         1: "O reconhecimento demorou demais (rede lenta). Tente de novo.",
         2: "Sem conexão com a internet. Conecte-se ou instale o pacote de "
@@ -81,13 +56,8 @@ def mensagem_erro_audio(codigo) -> str:
 def iniciar_transcricao_ao_vivo(callback_parcial=None, callback_final=None,
                                 callback_erro=None, preferir_offline=True):
     """Começa a ouvir o microfone e transcrever AO VIVO. Devolve uma sessão
-    com .parar() para encerrar a captação (botão 'Parar')."""
+    com .parar()/.cancelar()."""
     global _SESSAO_ATIVA
-    # ATENÇÃO: _no_android() é True quando o app está RODANDO NO Android
-    # (dentro do APK). A versão anterior estava com os ramos TROCADOS: no
-    # celular caía no caminho do desktop (Vosk/speech_recognition, que não
-    # existem no APK) e a "gravação" terminava na hora com texto vazio — o
-    # botão parecia não fazer nada. Agora cada plataforma usa o seu motor.
     if _no_android():
         _SESSAO_ATIVA = _iniciar_android(callback_parcial, callback_final,
                                          callback_erro, preferir_offline)
@@ -142,7 +112,6 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
             if callback_erro:
                 callback_erro(int(erro))
 
-        # métodos obrigatórios da interface (não precisamos deles) --------
         @java_method("(Landroid/os/Bundle;)V")
         def onReadyForSpeech(self, params):
             pass
@@ -178,7 +147,6 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
                             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.IDIOMA)
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, True)
-            # Modo ditado: não corta no primeiro silêncio curto.
             intent.putExtra("android.speech.extra.DICTATION_MODE", True)
             if preferir_offline:
                 try:
@@ -271,11 +239,8 @@ def _vosk_desktop_disponivel() -> bool:
 
 
 def vosk_disponivel() -> bool:
-    """Verifica (sem carregar o modelo inteiro) se dá pra usar transcrição
-    ao vivo: precisa do pacote instalado E do modelo baixado."""
+    """Sem carregar o modelo: precisa do pacote instalado E do modelo baixado."""
     if _no_android():
-        # No celular usamos o reconhecimento nativo do Android (diálogo do
-        # sistema), que não é "ao vivo" — então o app usa o caminho comum.
         return False
     if not config.USAR_VOSK_TEMPO_REAL:
         return False
@@ -296,11 +261,8 @@ def _carregar_modelo_vosk():
 
 
 def transcrever_do_microfone(duracao_maxima: int = 15) -> str:
-    """
-    Grava do microfone e devolve o texto reconhecido (sem atualização ao
-    vivo). Mantido para compatibilidade e como reserva de última instância.
-    Retorna string vazia se não conseguir (sem microfone, sem internet, etc.).
-    """
+    """Grava do microfone e devolve o texto (sem atualização ao vivo).
+    Reserva de última instância."""
     if config.USAR_GOOGLE_CLOUD_SPEECH:
         return _transcrever_google_cloud()
     return _transcrever_gratuito(duracao_maxima)
@@ -310,19 +272,10 @@ def transcrever_streaming_do_microfone(callback_parcial=None,
                                        duracao_maxima: int = 20,
                                        silencio_para_parar: float = 2.2,
                                        parar_flag=None) -> str:
-    """
-    Transcreve AO VIVO usando o Vosk (offline): a cada pedacinho de áudio
-    reconhecido, chama callback_parcial(texto_ate_agora) — dá pra usar isso
-    pra ir mostrando a frase sendo escrita na tela, como uma legenda.
-
-    Para sozinho quando: passa da duração máxima, OU já falou algo e ficou
-    em silêncio por `silencio_para_parar` segundos (sensação mais natural do
-    que esperar sempre o tempo máximo).
-
-    Retorna o texto final reconhecido (string vazia se nada foi entendido).
-    Se `parar_flag` (threading.Event) for passado, encerra assim que ele for
-    setado — é assim que o botão "Parar" interrompe a captação no desktop.
-    """
+    """Transcreve AO VIVO usando o Vosk (offline): a cada pedaço reconhecido,
+    chama callback_parcial(texto_ate_agora). Para sozinho ao passar da duração
+    máxima ou após `silencio_para_parar` segundos de silêncio. Se `parar_flag`
+    (threading.Event) for setado, encerra na hora (botão 'Parar')."""
     import pyaudio
 
     modelo = _carregar_modelo_vosk()
@@ -427,10 +380,8 @@ def _transcrever_google_cloud() -> str:
         print("[AVISO] Instale: pip install google-cloud-speech pyaudio")
         return ""
 
-    import os
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(
-        config.GOOGLE_CLOUD_CREDENTIALS
-    )
+        config.GOOGLE_CLOUD_CREDENTIALS)
 
     cliente = speech.SpeechClient()
     configuracao = speech.RecognitionConfig(
@@ -440,7 +391,6 @@ def _transcrever_google_cloud() -> str:
         enable_automatic_punctuation=True,
     )
 
-    # Grava ~7 segundos de áudio do microfone
     formato, canais, quadros = pyaudio.paInt16, 1, []
     pa = pyaudio.PyAudio()
     stream = pa.open(format=formato, channels=canais,
@@ -458,3 +408,19 @@ def _transcrever_google_cloud() -> str:
     if resposta.results:
         return resposta.results[0].alternatives[0].transcript
     return ""
+
+
+class TranscritorVoz(Transcritor):
+    """Adapta as funções deste módulo à porta `Transcritor`."""
+
+    def disponivel_ao_vivo(self) -> bool:
+        return vosk_disponivel() or _no_android()
+
+    def iniciar_ao_vivo(self, callback_parcial=None, callback_final=None,
+                        callback_erro=None):
+        return iniciar_transcricao_ao_vivo(
+            callback_parcial=callback_parcial, callback_final=callback_final,
+            callback_erro=callback_erro)
+
+    def mensagem_erro(self, codigo) -> str:
+        return mensagem_erro_audio(codigo)

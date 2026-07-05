@@ -1,23 +1,12 @@
 """
-google_auth.py
+google/auth.py
 --------------
-Login com a conta Google do usuário (OAuth 2.0) para o app poder criar e
-atualizar uma planilha no PRÓPRIO Google Drive dele.
+Login com a conta Google do usuário (OAuth 2.0, fluxo loopback + PKCE) para o
+app criar/atualizar uma planilha no próprio Drive dele. Usa só a biblioteca
+padrão (urllib, http.server) para não pesar nem arriscar o build do APK.
 
-Não usamos bibliotecas pesadas (gspread / google-api-python-client): só a
-biblioteca-padrão do Python (urllib, http.server, json, hashlib...) para não
-pesar nem arriscar o build do APK. No Android, o navegador é aberto via
-pyjnius; no computador, via módulo webbrowser.
-
-Fluxo usado: "loopback" (o recomendado pelo Google para apps nativos):
-  1) subimos um servidor HTTP local em 127.0.0.1:PORTA;
-  2) abrimos o navegador na tela de consentimento do Google, pedindo que ele
-     redirecione de volta para 127.0.0.1:PORTA depois do "Permitir";
-  3) o servidor local captura o "code" do redirecionamento;
-  4) trocamos o "code" por um token de acesso (+ refresh token) e guardamos.
-
-Depois disso, obter_token_valido() devolve sempre um token válido (renovando
-sozinho quando expira), que o google_sheets_sync usa para falar com as APIs.
+Expõe funções de baixo nível (usadas pelo Sheets) e a classe
+`AutenticadorGoogle`, que implementa a porta `Autenticador` do domínio.
 """
 
 import base64
@@ -31,7 +20,8 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from backend import config
+from vetvoice.domain.ports import Autenticador
+from vetvoice.shared import config
 
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -42,8 +32,7 @@ _EMAIL_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 # Estado / configuração
 # ---------------------------------------------------------------------------
 def _ler_config_cliente():
-    """Lê o oauth_client.json (client_id/secret). Aceita tanto o formato
-    {"installed": {...}} quanto {"web": {...}} baixado do Google Cloud."""
+    """Lê o oauth_client.json. Aceita {"installed": {...}} ou {"web": {...}}."""
     try:
         with open(config.GOOGLE_OAUTH_CLIENT, "r", encoding="utf-8") as f:
             bruto = json.load(f)
@@ -56,7 +45,6 @@ def _ler_config_cliente():
 
 
 def esta_configurado() -> bool:
-    """True se o app tem as credenciais de OAuth (login com Google possível)."""
     return _ler_config_cliente() is not None
 
 
@@ -112,8 +100,8 @@ def _montar_url_auth(cfg, porta, desafio, state):
         "code_challenge": desafio,
         "code_challenge_method": "S256",
         "state": state,
-        "access_type": "offline",   # queremos refresh_token
-        "prompt": "consent",        # garante o refresh_token na 1ª vez
+        "access_type": "offline",
+        "prompt": "consent",
     }
     return _AUTH_URL + "?" + urllib.parse.urlencode(params)
 
@@ -138,13 +126,13 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(
             "<html><body style='font-family:sans-serif;text-align:center;"
-            "padding-top:60px'><h2>Login concluído ✅</h2><p>Pode fechar esta "
-            "aba e voltar para o VetSheets.</p></body></html>".encode("utf-8"))
+            "padding-top:60px'><h2>Login concluído</h2><p>Pode fechar esta "
+            "aba e voltar para o VetVoice.</p></body></html>".encode("utf-8"))
         if self.server.evento is not None:
             self.server.evento.set()
 
     def log_message(self, *args):
-        pass  # silencia o log padrão do http.server
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -201,12 +189,11 @@ def _buscar_email(access_token):
 
 
 def obter_token_valido():
-    """Devolve um access_token válido (renovando com o refresh_token se
-    necessário). Retorna None se não estiver logado ou a renovação falhar."""
+    """access_token válido (renovando com o refresh_token se necessário).
+    None se não estiver logado ou a renovação falhar."""
     token = _ler_token()
     if not token or not token.get("refresh_token"):
         return None
-
     if token.get("access_token") and token.get("expira_em", 0) > time.time() + 60:
         return token["access_token"]
 
@@ -245,16 +232,13 @@ def login(callback_sucesso=None, callback_erro=None, timeout: float = 300.0):
         try:
             servidor = _ColetorCode(("127.0.0.1", 0), _Handler)
             servidor.evento = threading.Event()
-            servidor.timeout = 1  # não bloquear para sempre em cada requisição
+            servidor.timeout = 1
             porta = servidor.server_address[1]
 
             verifier, desafio = _pkce()
             state = secrets.token_urlsafe(16)
             url = _montar_url_auth(cfg, porta, desafio, state)
 
-            # Fica atendendo requisições até chegar o redirecionamento com o
-            # 'code'. (Um único handle_request podia ser "gasto" por um pedido
-            # de favicon do navegador e perder o code — por isso o laço.)
             def _servir():
                 while not servidor.evento.is_set():
                     try:
@@ -298,3 +282,25 @@ def login(callback_sucesso=None, callback_erro=None, timeout: float = 300.0):
                     pass
 
     threading.Thread(target=_fluxo, daemon=True).start()
+
+
+class AutenticadorGoogle(Autenticador):
+    """Adapta as funções deste módulo à porta `Autenticador`."""
+
+    def esta_configurado(self) -> bool:
+        return esta_configurado()
+
+    def esta_logado(self) -> bool:
+        return esta_logado()
+
+    def email_logado(self) -> str:
+        return email_logado()
+
+    def login(self, callback_sucesso=None, callback_erro=None) -> None:
+        login(callback_sucesso=callback_sucesso, callback_erro=callback_erro)
+
+    def logout(self) -> None:
+        logout()
+
+    def obter_token_valido(self):
+        return obter_token_valido()
