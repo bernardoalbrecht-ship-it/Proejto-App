@@ -91,8 +91,10 @@ _NAO_E_DROGA = {
     "cada", "apenas", "so", "tomou", "recebeu", "aplicar", "pesa", "peso",
     "kg", "anos", "ano", "idade",
 }
-# Categorias do animal também não são remédio (evita "Novilha 5ml").
+# Categorias do animal e status reprodutivo também não são remédio
+# (evita "Novilha 5ml" e "Prenha 5ml").
 _NAO_E_DROGA |= lexicon.CATEGORIAS.sinonimos_de_palavra_unica()
+_NAO_E_DROGA |= lexicon.STATUS.sinonimos_de_palavra_unica()
 
 
 def _canonizar_droga(palavra: str) -> str:

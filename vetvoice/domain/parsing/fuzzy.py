@@ -9,6 +9,8 @@ Regra de ouro: quanto mais curta a palavra, menos erro se tolera — senão
 "vaca" viraria "vacina" por acaso. Palavras muito curtas exigem escrita exata.
 """
 
+import re
+
 # Abaixo deste tamanho, uma chave só é aceita por escrita EXATA (alto risco de
 # "quase bater" em outra coisa por acaso).
 TAMANHO_MINIMO_PARA_FUZZY = 5
@@ -60,7 +62,10 @@ def contem(texto_norm: str, chave_norm: str, tokens: list = None) -> bool:
     Todos os argumentos já devem vir normalizados."""
     if not chave_norm:
         return False
-    if chave_norm in texto_norm:
+    # Substring, mas começando numa FRONTEIRA de palavra à esquerda: assim
+    # "angus" NÃO bate dentro de "brangus", mas prefixos legítimos continuam
+    # valendo ("insemina" ainda bate em "inseminacao").
+    if re.search(r"\b" + re.escape(chave_norm), texto_norm):
         return True
     if len(chave_norm) < TAMANHO_MINIMO_PARA_FUZZY:
         return False

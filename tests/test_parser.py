@@ -111,6 +111,27 @@ def test_corrigir_transcricao():
     assert "vazia" in _parser.corrigir_transcricao("a vaca esta vasia").lower()
 
 
+def test_brangus_nao_vira_angus():
+    # "angus" é substring de "brangus"; o match não pode confundir.
+    assert analisar("vaca 10 brangus")["raca"] == "Brangus"
+
+
+def test_racas_ampliadas():
+    assert analisar("vaca 3 hereford")["raca"] == "Hereford"
+    assert analisar("vaca 4 holstein")["raca"] == "Holandês"
+
+
+def test_status_nao_vira_medicacao():
+    # "ceftiofur 5ml prenha": 'prenha' não pode ser capturada como remédio.
+    r = analisar("vaca 15 ceftiofur 5ml prenha")
+    assert r["medicacoes"] == "Ceftiofur 5ml"
+    assert r["status_reprodutivo"] == "Prenha"
+
+
+def test_diagnostico_ampliado_pneumonia():
+    assert analisar("vaca 9 pneumonia")["diagnostico"] == "Pneumonia"
+
+
 def test_todas_as_chaves_presentes():
     r = analisar("qualquer coisa")
     for chave in ("propriedade", "id_vaca", "procedimento", "raca", "peso_kg",
