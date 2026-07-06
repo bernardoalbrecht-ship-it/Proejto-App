@@ -180,6 +180,19 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, True)
             # Modo ditado: não corta no primeiro silêncio curto.
             intent.putExtra("android.speech.extra.DICTATION_MODE", True)
+            # Tolera PAUSAS mais longas antes de encerrar (o veterinário fala
+            # em blocos: "vaca 324..." <pausa> "...inseminação"). Sem isto o
+            # motor encerrava no primeiro silêncio. São dicas — nem todo motor
+            # respeita, mas não atrapalham.
+            intent.putExtra(
+                "android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS",
+                4000)
+            intent.putExtra(
+                "android.speech.extra."
+                "SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 4000)
+            intent.putExtra(
+                "android.speech.extra.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS",
+                12000)
             if preferir_offline:
                 try:
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, True)

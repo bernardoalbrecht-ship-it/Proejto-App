@@ -83,6 +83,18 @@ PROCEDIMENTOS = {
     "casqueamento": "Casqueamento",
     "parto": "Acompanhamento de Parto",
     "secagem": "Secagem",
+    "iatf": "IATF (Inseminação em Tempo Fixo)",
+    "vermifugação": "Vermifugação", "vermifugacao": "Vermifugação",
+    "vermífugo": "Vermifugação", "vermifugo": "Vermifugação",
+    "cesariana": "Cesariana", "cesárea": "Cesariana", "cesarea": "Cesariana",
+    "palpação": "Palpação Retal", "palpacao": "Palpação Retal",
+    "protocolo": "Protocolo Hormonal",
+    "castração": "Castração", "castracao": "Castração",
+    "descorna": "Descorna",
+    "colheita de sêmen": "Colheita de Sêmen",
+    "sexagem": "Sexagem Fetal",
+    "escore corporal": "Avaliação de Escore Corporal",
+    "necropsia": "Necropsia",
 }
 
 # Palavras-chave -> status reprodutivo (só existem duas opções na interface)
@@ -106,9 +118,32 @@ DIAGNOSTICOS = {
     "retenção de placenta": "Retenção de Placenta",
     "retencao de placenta": "Retenção de Placenta",
     "metrite": "Metrite",
+    "endometrite": "Endometrite",
     "claudicação": "Claudicação",
     "claudicacao": "Claudicação",
     "prolapso": "Prolapso Uterino",
+    # Diagnósticos extras: como NÃO são "quadrados" fixos, o app marca o chip
+    # "Outro" e escreve o nome no campo (texto livre).
+    "timpanismo": "Timpanismo",
+    "hipocalcemia": "Hipocalcemia", "febre do leite": "Hipocalcemia",
+    "cetose clínica": "Cetose Clínica",
+    "tristeza parasitária": "Tristeza Parasitária Bovina",
+    "tristeza parasitaria": "Tristeza Parasitária Bovina",
+    "pneumonia": "Pneumonia",
+    "diarreia": "Diarreia", "diarréia": "Diarreia",
+    "laminite": "Laminite",
+    "deslocamento de abomaso": "Deslocamento de Abomaso",
+    "acidose": "Acidose Ruminal",
+    "ceratoconjuntivite": "Ceratoconjuntivite",
+    "podridão de casco": "Podridão de Casco",
+    "podridao de casco": "Podridão de Casco",
+    "dermatite": "Dermatite",
+    "brucelose": "Brucelose",
+    "tuberculose": "Tuberculose",
+    "carrapato": "Infestação por Carrapatos",
+    "bicheira": "Miíase (Bicheira)",
+    "abscesso": "Abscesso",
+    "fratura": "Fratura",
 }
 
 # Palavras que indicam medicação/insumo aplicado. Cada item é uma palavra-chave
@@ -138,6 +173,28 @@ MEDICACOES = {
     "buscopan": "Buscopan",
     "soro": "Soro",
     "vitamina": "Complexo Vitamínico",
+    "oxitocina": "Ocitocina",
+    "ceftiofur": "Ceftiofur",
+    "enrofloxacino": "Enrofloxacino", "enrofloxacina": "Enrofloxacino",
+    "florfenicol": "Florfenicol",
+    "tulatromicina": "Tulatromicina",
+    "gentamicina": "Gentamicina",
+    "amoxicilina": "Amoxicilina",
+    "tilosina": "Tilosina",
+    "doramectina": "Doramectina",
+    "abamectina": "Abamectina",
+    "closantel": "Closantel",
+    "levamisol": "Levamisol",
+    "albendazol": "Albendazol",
+    "fenbendazol": "Fenbendazol",
+    "cloprostenol": "Cloprostenol",
+    "gonadotrofina": "Gonadotrofina",
+    "progesterona": "Progesterona",
+    "estradiol": "Benzoato de Estradiol",
+    "cetoprofeno": "Cetoprofeno",
+    "carprofeno": "Carprofeno",
+    "gluconato de cálcio": "Gluconato de Cálcio",
+    "antitóxico": "Antitóxico", "antitoxico": "Antitóxico",
 }
 
 # Palavras-chave -> raça (nome padronizado). As raças mais comuns em gado
@@ -155,6 +212,24 @@ RACAS = {
     "guzerá": "Guzerá", "guzera": "Guzerá",
     "simental": "Simental",
     "canchim": "Canchim",
+    "holstein": "Holandês (Holstein)",
+    "brangus": "Brangus",
+    "braford": "Braford",
+    "hereford": "Hereford",
+    "charolês": "Charolês", "charoles": "Charolês",
+    "limousin": "Limousin", "limusin": "Limousin",
+    "caracu": "Caracu",
+    "tabapuã": "Tabapuã", "tabapua": "Tabapuã",
+    "devon": "Devon",
+    "wagyu": "Wagyu", "waguio": "Wagyu",
+    "sindi": "Sindi",
+    "red angus": "Red Angus",
+    "montana": "Montana",
+    "bonsmara": "Bonsmara",
+    "marchigiana": "Marchigiana",
+    "santa gertrudis": "Santa Gertrudis",
+    "indubrasil": "Indubrasil",
+    "cruzado": "Cruzado", "mestiço": "Mestiço", "mestico": "Mestiço",
 }
 
 
@@ -173,6 +248,13 @@ PROXIMA_ACAO = {
 def _tokens(texto: str) -> list:
     """Quebra o texto em palavras, ignorando pontuação."""
     return re.findall(r"[a-zà-ÿ]+", texto.lower())
+
+
+def _por_tamanho(dicionario: dict):
+    """Itens do dicionário ordenados da chave MAIS LONGA para a mais curta.
+    Assim, na busca, o termo específico vence o genérico que é substring dele
+    (ex.: 'brangus' antes de 'angus', 'girolando' antes de 'gir')."""
+    return sorted(dicionario.items(), key=lambda kv: -len(kv[0]))
 
 
 def _bate(texto: str, chave: str, tokens: list = None) -> bool:
@@ -269,14 +351,16 @@ def _analisar_com_regras(transcricao: str) -> dict:
         "observacoes": "",
     }
 
-    # Procedimento — procura a primeira palavra-chave que aparecer
-    for chave, nome in PROCEDIMENTOS.items():
+    # Procedimento — procura a palavra-chave que aparecer. Ordena da MAIS
+    # LONGA para a mais curta para o termo específico ganhar do genérico
+    # (ex.: "brangus" antes de "angus", que é substring dele).
+    for chave, nome in _por_tamanho(PROCEDIMENTOS):
         if _bate(texto, chave, tokens):
             resultado["procedimento"] = nome
             break
 
-    # Raça — primeira raça conhecida citada
-    for chave, nome in RACAS.items():
+    # Raça — primeira raça conhecida citada (mais longa primeiro)
+    for chave, nome in _por_tamanho(RACAS):
         if _bate(texto, chave, tokens):
             resultado["raca"] = nome
             break
@@ -296,7 +380,7 @@ def _analisar_com_regras(transcricao: str) -> dict:
     # Diagnóstico: procura por uma das opções conhecidas (mesmas da tela).
     # Se nada bater, deixamos em branco — o veterinário escolhe manualmente
     # entre os chips, em vez de o campo ficar poluído com a frase inteira.
-    for chave, nome in DIAGNOSTICOS.items():
+    for chave, nome in _por_tamanho(DIAGNOSTICOS):
         if _bate(texto, chave, tokens):
             resultado["diagnostico"] = nome
             break
@@ -381,6 +465,9 @@ _NAO_E_DROGA = {
     "bezerra", "bezerro", "terneira", "terneiro", "novilha", "novilhas",
     "novilho", "primípara", "primipara", "secundípara", "secundipara",
     "multípara", "multipara", "nulípara", "nulipara",
+    # status reprodutivo também não é remédio (evita "Prenha 5ml")
+    "prenha", "prenhe", "vazia", "vazio", "gestante", "grávida", "gravida",
+    "cio", "lactação", "lactacao", "seca",
 }
 
 
@@ -425,7 +512,7 @@ def _extrair_medicacoes(texto: str, tokens: list) -> str:
                          % _UNID_MED, texto):
         registrar(_canonizar_droga(m.group(3)), m.group(1) + m.group(2))
     # 3) Fármacos conhecidos citados SEM dose (ex.: "apliquei antibiótico").
-    for chave, nome in MEDICACOES.items():
+    for chave, nome in _por_tamanho(MEDICACOES):
         if _bate(texto, chave, tokens):
             registrar(nome)
 

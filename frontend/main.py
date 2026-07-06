@@ -726,24 +726,36 @@ def alternar_gravacao(host, botao, campo, ao_final=None):
             pass
         return
 
+    # Texto que JÁ estava no campo: vamos ACRESCENTAR a fala, não apagar.
+    # Assim, gravar de novo continua de onde parou (ex.: "Vaca 324" +
+    # "inseminação artificial" = "Vaca 324 inseminação artificial").
+    base = campo.text.strip()
+
+    def _juntar(novo):
+        novo = (novo or "").strip()
+        if base and novo:
+            return base + " " + novo
+        return base or novo
+
     def _repor_botao(*_):
         botao.set_estado(False)
 
     def on_parcial(texto):
-        Clock.schedule_once(lambda *_: setattr(campo, "text", texto))
+        Clock.schedule_once(lambda *_: setattr(campo, "text", _juntar(texto)))
 
     def on_final(texto):
         texto = (texto or "").strip()
         if texto:
             texto = ai_analyzer.corrigir_transcricao(texto)
+        final = _juntar(texto)
 
         def _ui(*_):
             host._sessao_audio = None
             _repor_botao()
-            if texto:
-                campo.text = texto
-                if ao_final:
-                    ao_final(texto)
+            if final:
+                campo.text = final
+                if ao_final and texto:
+                    ao_final(final)
         Clock.schedule_once(_ui)
 
     def on_erro(codigo):
@@ -763,7 +775,6 @@ def alternar_gravacao(host, botao, campo, ao_final=None):
               "pode digitar o texto manualmente.\n\n(%s)" % erro)
         return
 
-    campo.text = ""
     botao.set_estado(True)
 
 
