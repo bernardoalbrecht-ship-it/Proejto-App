@@ -26,7 +26,7 @@ class TelaHistorico(Screen):
         raiz.add_widget(titulo_tela("Histórico", "Seus atendimentos por fazenda"))
 
         corpo = BoxLayout(orientation="vertical", padding=[dp(16), dp(8), dp(16),
-                          dp(12)], spacing=dp(12))
+                          dp(80)], spacing=dp(12))  # folga p/ a barra inferior
 
         # --- Seletor de propriedade (vacas mostradas por fazenda) ---
         self.propriedade_selecionada = ""

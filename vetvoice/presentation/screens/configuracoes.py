@@ -25,7 +25,7 @@ class TelaConfig(Screen):
 
         scroll = RolagemComCampos()
         corpo = BoxLayout(orientation="vertical", padding=[dp(16), dp(8), dp(16),
-                          dp(16)], spacing=dp(14), size_hint_y=None)
+                          dp(80)], spacing=dp(14), size_hint_y=None)  # folga p/ barra
         corpo.bind(minimum_height=corpo.setter("height"))
 
         # Cartão modo atual

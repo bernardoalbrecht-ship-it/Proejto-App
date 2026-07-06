@@ -327,7 +327,10 @@ class SeletorOpcoes(GridLayout):
 
 
 def ir_inicial(*_):
-    App.get_running_app().root.current = "inicial"
+    # A raiz do app agora é um BoxLayout (conteúdo + barra inferior); o
+    # ScreenManager fica em app.sm. Usar root.current não navegava nada — era
+    # por isso que a seta "voltar" do topo não funcionava.
+    App.get_running_app().sm.current = "inicial"
 
 
 def cabecalho(titulo, subtitulo="", icone_nome="vaca", com_voltar=False):
