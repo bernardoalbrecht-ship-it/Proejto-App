@@ -39,8 +39,11 @@ class TelaInicial(Screen):
         raiz = pagina()
 
         scroll = RolagemComCampos()
+        # Padding inferior grande (dp(80)) = folga para a BARRA DE NAVEGAÇÃO
+        # inferior não cobrir o botão "Iniciar atendimento" (a barra fica fora
+        # da rolagem; sem essa folga o último botão ficava cortado atrás dela).
         corpo = BoxLayout(orientation="vertical", padding=[dp(18), dp(16), dp(18),
-                          dp(20)], spacing=dp(14), size_hint_y=None)
+                          dp(80)], spacing=dp(14), size_hint_y=None)
         corpo.bind(minimum_height=corpo.setter("height"))
 
         # --- Saudação + status de sincronização (pílula tocável) ---
