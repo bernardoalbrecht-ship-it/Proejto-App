@@ -126,6 +126,15 @@ class RolagemComCampos(ScrollView):
     arrastou, foi rolagem e não roubamos o foco. Botões (ButtonBehavior) seguem
     pelo caminho padrão do ScrollView."""
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Segura o gesto por mais tempo antes de "entregar" o toque a um botão.
+        # Sem isso, começar o arraste EM CIMA de um botão/chip não rolava (o
+        # botão engolia o toque). 250 ms deixa a rolagem começar mesmo sobre
+        # botões, sem atrapalhar toques rápidos (que disparam ao soltar).
+        self.scroll_timeout = 250
+        self.scroll_distance = dp(14)
+
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             alvo = self._alvo_sob_toque(self, touch.pos[0], touch.pos[1])

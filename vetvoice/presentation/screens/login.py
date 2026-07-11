@@ -74,6 +74,19 @@ class TelaLogin(Screen):
         botao_google.bind(on_release=self._entrar_google)
         cartao.add_widget(botao_google)
 
+        # Fallback: se o navegador não voltar sozinho para o app (loopback
+        # bloqueado em alguns aparelhos), o usuário cola aqui o endereço que
+        # abriu (começa com http://127.0.0.1) e conclui o login.
+        cartao.add_widget(etiqueta("Não voltou sozinho? Cole o endereço do navegador"))
+        self.campo_code = Campo(multiline=False, size_hint_y=None, height=dp(44),
+                                hint_text="http://127.0.0.1:...?code=...")
+        cartao.add_widget(self.campo_code)
+        botao_concluir = Botao(texto="Concluir login com o código",
+                               cor=CORES["verde_claro"], size_hint_y=None,
+                               height=dp(46), font_size="13sp")
+        botao_concluir.bind(on_release=self._concluir_manual)
+        cartao.add_widget(botao_concluir)
+
         meio.add_widget(cartao)
         meio.add_widget(Widget())
         raiz.add_widget(meio)
@@ -111,19 +124,32 @@ class TelaLogin(Screen):
               "Vou abrir o navegador para você entrar na sua conta Google e "
               "autorizar. Depois de autorizar, volte para o VetVoice.")
 
-        def ao_sucesso(email):
-            def _ui(*_):
-                sessao.usuario = email or "Conta Google"
-                sessao.nuvem = True
-                aviso("Conectado ao Google",
-                      "Login concluído como:\n%s\n\nAgora o botão Sincronizar "
-                      "cria/atualiza a planilha no seu Drive." % (email or "—"))
-                self.manager.current = "inicial"
-            Clock.schedule_once(_ui)
+        autenticacao.login(callback_sucesso=self._ao_sucesso_login,
+                           callback_erro=self._ao_erro_login)
 
-        def ao_erro(msg):
-            Clock.schedule_once(lambda *_: aviso(
-                "Login com Google", "Não foi possível concluir o login.\n\n%s"
-                % msg))
+    def _ao_sucesso_login(self, email):
+        def _ui(*_):
+            sessao = self.servicos.sessao
+            sessao.usuario = email or "Conta Google"
+            sessao.nuvem = True
+            aviso("Conectado ao Google",
+                  "Login concluído como:\n%s\n\nAgora o botão Sincronizar "
+                  "cria/atualiza a planilha no seu Drive." % (email or "—"))
+            self.manager.current = "inicial"
+        Clock.schedule_once(_ui)
 
-        autenticacao.login(callback_sucesso=ao_sucesso, callback_erro=ao_erro)
+    def _ao_erro_login(self, msg):
+        Clock.schedule_once(lambda *_: aviso(
+            "Login com Google", "Não foi possível concluir o login.\n\n%s"
+            % msg))
+
+    def _concluir_manual(self, *_):
+        entrada = self.campo_code.text.strip()
+        if not entrada:
+            aviso("Concluir login",
+                  "Cole o endereço (ou o código) que apareceu no navegador "
+                  "depois de você autorizar.")
+            return
+        self.servicos.autenticacao.completar_manual(
+            entrada, callback_sucesso=self._ao_sucesso_login,
+            callback_erro=self._ao_erro_login)

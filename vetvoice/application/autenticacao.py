@@ -25,5 +25,10 @@ class Autenticacao:
         self._auth.login(callback_sucesso=callback_sucesso,
                          callback_erro=callback_erro)
 
+    def completar_manual(self, entrada, callback_sucesso=None,
+                         callback_erro=None) -> None:
+        self._auth.completar_manual(entrada, callback_sucesso=callback_sucesso,
+                                    callback_erro=callback_erro)
+
     def logout(self) -> None:
         self._auth.logout()
