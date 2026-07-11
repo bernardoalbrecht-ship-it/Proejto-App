@@ -11,8 +11,8 @@ from vetvoice.presentation.dialogs import aviso
 from vetvoice.presentation.gravacao import alternar_gravacao
 from vetvoice.presentation.theme import CORES, rotulo_icone
 from vetvoice.presentation.widgets import (
-    Botao, Campo, Cartao, ControleGravacao, RolagemComCampos, SeletorOpcoes,
-    cabecalho, etiqueta, pagina, texto_livre,
+    Botao, Campo, Cartao, ControleGravacao, RolagemComCampos, SeletorComOutro,
+    SeletorOpcoes, cabecalho, etiqueta, pagina, texto_livre,
 )
 from vetvoice.shared import config
 from vetvoice.shared.config import COLUNAS_EXIBICAO
@@ -63,13 +63,27 @@ class TelaAtendimento(Screen):
                                      cor=CORES["verde"], tamanho="15sp",
                                      altura=dp(24)))
         self.campos = {}
-        multilinha = ("diagnostico", "observacoes")
+        multilinha = ("observacoes",)
+        dic = self.servicos.dicionarios
         for chave in ["procedimento", "raca", "peso_kg", "idade_anos",
                       "status_reprodutivo", "diagnostico", "medicacoes",
                       "proxima_acao", "observacoes"]:
             ficha.add_widget(etiqueta(COLUNAS_EXIBICAO[chave]))
 
-            if chave == "status_reprodutivo":
+            if chave == "procedimento":
+                entrada = SeletorComOutro(
+                    dic.opcoes("procedimento", config.PROCEDIMENTO_OPCOES),
+                    ao_adicionar=lambda t: dic.adicionar("procedimento", t),
+                    cols=2)
+                ficha.add_widget(entrada)
+
+            elif chave == "raca":
+                entrada = SeletorComOutro(
+                    dic.opcoes("raca", config.RACA_OPCOES),
+                    ao_adicionar=lambda t: dic.adicionar("raca", t), cols=3)
+                ficha.add_widget(entrada)
+
+            elif chave == "status_reprodutivo":
                 # Escolha entre Prenha/Vazia; o valor fica num Campo "oculto".
                 entrada = Campo()
                 self.seletor_status = SeletorOpcoes(
@@ -78,12 +92,11 @@ class TelaAtendimento(Screen):
                 ficha.add_widget(self.seletor_status)
 
             elif chave == "diagnostico":
-                entrada = Campo(multiline=True, size_hint_y=None, height=dp(64))
-                self.seletor_diagnostico = SeletorOpcoes(
-                    config.DIAGNOSTICO_OPCOES, cols=2,
-                    ao_selecionar=lambda v, e=entrada: setattr(
-                        e, "text", "" if v == "Outro" else v))
-                ficha.add_widget(self.seletor_diagnostico)
+                base_diag = [d for d in config.DIAGNOSTICO_OPCOES if d != "Outro"]
+                entrada = SeletorComOutro(
+                    dic.opcoes("diagnostico", base_diag),
+                    ao_adicionar=lambda t: dic.adicionar("diagnostico", t),
+                    cols=2)
                 ficha.add_widget(entrada)
 
             else:
@@ -117,7 +130,6 @@ class TelaAtendimento(Screen):
         for entrada in self.campos.values():
             entrada.text = ""
         self.seletor_status.selecionar("", disparar_callback=False)
-        self.seletor_diagnostico.selecionar("", disparar_callback=False)
 
         # Veio um comando falado da tela inicial? Preenche a ficha a partir dele.
         comando = self.servicos.sessao.consumir_prefill()
@@ -147,19 +159,14 @@ class TelaAtendimento(Screen):
         campos = self.servicos.analise.analisar(texto)
         if campos.get("id_vaca") and not self.campo_id.text.strip():
             self.campo_id.text = campos["id_vaca"]
+        # procedimento, raça e diagnóstico são SeletorComOutro: o próprio widget
+        # destaca o chip certo ou, se o valor não existir, abre o campo "Outro".
         for chave, entrada in self.campos.items():
             if campos.get(chave):
                 entrada.text = campos[chave]
         if campos.get("status_reprodutivo"):
             self.seletor_status.selecionar(campos["status_reprodutivo"],
                                            disparar_callback=False)
-        diag = campos.get("diagnostico", "")
-        if diag:
-            if diag in config.DIAGNOSTICO_OPCOES:
-                self.seletor_diagnostico.selecionar(diag, disparar_callback=False)
-            else:
-                self.seletor_diagnostico.selecionar("Outro", disparar_callback=False)
-                self.campos["diagnostico"].text = diag
 
     def salvar(self, *_):
         if not self.campo_id.text.strip():

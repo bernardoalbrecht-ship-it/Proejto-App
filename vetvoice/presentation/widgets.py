@@ -326,6 +326,97 @@ class SeletorOpcoes(GridLayout):
             botao.color = (1, 1, 1, 1) if ativo else CORES["texto_suave"]
 
 
+class SeletorComOutro(BoxLayout):
+    """Grade de chips (uma opção destacada) com um chip "Outro" no fim. Tocar
+    "Outro" revela um campo de texto + botão "+" para digitar um valor novo; ao
+    confirmar, o valor vira um chip e é PERSISTIDO pelo callback `ao_adicionar`
+    (dicionários editáveis). Expõe `.text` (get/set) para entrar no lugar de um
+    Campo — o resto da tela continua lendo/gravando por `.text`."""
+
+    def __init__(self, opcoes, ao_adicionar=None, cols=2, **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("spacing", dp(6))
+        super().__init__(**kwargs)
+        self.bind(minimum_height=self.setter("height"))
+        self._ao_adicionar = ao_adicionar
+        self._opcoes = list(opcoes)
+        self._cols = cols
+
+        self._grade_box = BoxLayout(orientation="vertical", size_hint_y=None)
+        self._grade_box.bind(minimum_height=self._grade_box.setter("height"))
+        self.add_widget(self._grade_box)
+
+        # Área "Outro": campo + botão "+", escondida (altura/opacidade 0) até
+        # o chip "Outro" ser tocado.
+        self._area_outro = BoxLayout(size_hint_y=None, height=0, opacity=0,
+                                     spacing=dp(8), disabled=True)
+        self._campo_outro = Campo(multiline=False, size_hint_y=None, height=dp(44),
+                                  hint_text="Digite um valor novo e toque em +")
+        self._campo_outro.bind(on_text_validate=lambda *_: self._confirmar_outro())
+        botao_add = Botao(texto="+", cor=CORES["verde"], size_hint_x=None,
+                          width=dp(52), font_size="22sp")
+        botao_add.bind(on_release=lambda *_: self._confirmar_outro())
+        self._area_outro.add_widget(self._campo_outro)
+        self._area_outro.add_widget(botao_add)
+        self.add_widget(self._area_outro)
+
+        self._montar_grade()
+
+    def _montar_grade(self, selecionado=""):
+        self._grade_box.clear_widgets()
+        self._seletor = SeletorOpcoes(
+            self._opcoes + ["Outro"], cols=self._cols,
+            valor_inicial=selecionado, ao_selecionar=self._ao_selecionar)
+        self._grade_box.add_widget(self._seletor)
+
+    def _ao_selecionar(self, opcao):
+        self._mostrar_area_outro(opcao == "Outro")
+
+    def _mostrar_area_outro(self, mostrar):
+        self._area_outro.height = dp(44) if mostrar else 0
+        self._area_outro.opacity = 1 if mostrar else 0
+        self._area_outro.disabled = not mostrar
+
+    def _confirmar_outro(self):
+        termo = self._campo_outro.text.strip()
+        if not termo:
+            return
+        termo = termo[:1].upper() + termo[1:]
+        if termo not in self._opcoes:
+            self._opcoes.append(termo)
+            if self._ao_adicionar:
+                self._ao_adicionar(termo)
+        self._campo_outro.text = ""
+        self._mostrar_area_outro(False)
+        self._montar_grade(selecionado=termo)
+
+    @property
+    def text(self):
+        valor = self._seletor.valor
+        if valor == "Outro":
+            return self._campo_outro.text.strip()
+        return valor or ""
+
+    @text.setter
+    def text(self, valor):
+        valor = (valor or "").strip()
+        if not valor:
+            self._campo_outro.text = ""
+            self._mostrar_area_outro(False)
+            self._montar_grade(selecionado="")
+        elif valor in self._opcoes:
+            self._campo_outro.text = ""
+            self._mostrar_area_outro(False)
+            self._montar_grade(selecionado=valor)
+        else:
+            # Valor novo vindo do parser (ex.: diagnóstico fora da lista):
+            # mostra em "Outro" já preenchido — o usuário toca "+" para salvar.
+            self._campo_outro.text = valor
+            self._montar_grade(selecionado="Outro")
+            self._mostrar_area_outro(True)
+
+
 def ir_inicial(*_):
     # A raiz do app agora é um BoxLayout (conteúdo + barra inferior); o
     # ScreenManager fica em app.sm. Usar root.current não navegava nada — era

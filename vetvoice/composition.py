@@ -12,6 +12,7 @@ mudar só aqui — nada mais no app precisa saber.
 from vetvoice.application.analise import AnalisarFala
 from vetvoice.application.atendimentos import GestaoAtendimentos
 from vetvoice.application.autenticacao import Autenticacao
+from vetvoice.application.dicionarios import GestaoDicionarios
 from vetvoice.application.propriedades import GestaoPropriedades
 from vetvoice.application.servicos import Servicos
 from vetvoice.application.sessao import Sessao
@@ -41,12 +42,14 @@ def montar_servicos() -> Servicos:
 
     repo_atend = sqlite.RepositorioAtendimentosSQLite()
     repo_prop = sqlite.RepositorioPropriedadesSQLite()
+    repo_dic = sqlite.RepositorioDicionariosSQLite()
     nuvem = ServicoNuvemGoogle()
 
     return Servicos(
         analise=AnalisarFala(_criar_parser()),
         atendimentos=GestaoAtendimentos(repo_atend),
         propriedades=GestaoPropriedades(repo_prop, repo_atend),
+        dicionarios=GestaoDicionarios(repo_dic),
         sincronizacao=SincronizarAtendimentos(repo_atend, nuvem),
         autenticacao=Autenticacao(AutenticadorGoogle()),
         transcritor=TranscritorVoz(),

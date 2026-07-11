@@ -13,7 +13,9 @@ from datetime import datetime
 from typing import List, Optional
 
 from vetvoice.domain.entities import Atendimento
-from vetvoice.domain.ports import RepositorioAtendimentos, RepositorioPropriedades
+from vetvoice.domain.ports import (
+    RepositorioAtendimentos, RepositorioDicionarios, RepositorioPropriedades,
+)
 from vetvoice.shared import config
 
 
@@ -63,6 +65,17 @@ def inicializar_banco(caminho=None):
             CREATE TABLE IF NOT EXISTS propriedades (
                 nome      TEXT PRIMARY KEY,
                 criado_em TEXT
+            )
+            """
+        )
+        # Termos adicionados pelo usuário às listas editáveis (chips "Outro").
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dicionarios (
+                categoria TEXT NOT NULL,
+                termo     TEXT NOT NULL,
+                criado_em TEXT,
+                PRIMARY KEY (categoria, termo)
             )
             """
         )
@@ -212,3 +225,35 @@ class RepositorioPropriedadesSQLite(RepositorioPropriedades):
                 """
             ).fetchall()
         return [l["nome"] for l in linhas]
+
+
+class RepositorioDicionariosSQLite(RepositorioDicionarios):
+    """Guarda os termos que o usuário adicionou às listas editáveis."""
+
+    def __init__(self, caminho=None):
+        self._caminho = caminho
+
+    def adicionar(self, categoria: str, termo: str) -> None:
+        categoria = (categoria or "").strip()
+        termo = (termo or "").strip()
+        if not categoria or not termo:
+            return
+        with conectar(self._caminho) as conexao:
+            conexao.execute(
+                "INSERT OR IGNORE INTO dicionarios (categoria, termo, criado_em) "
+                "VALUES (?, ?, ?)", (categoria, termo, datetime.now().isoformat()))
+            conexao.commit()
+
+    def listar(self, categoria: str) -> List[str]:
+        with conectar(self._caminho) as conexao:
+            linhas = conexao.execute(
+                "SELECT termo FROM dicionarios WHERE categoria=? "
+                "ORDER BY criado_em", (categoria,)).fetchall()
+        return [l["termo"] for l in linhas]
+
+    def excluir(self, categoria: str, termo: str) -> None:
+        with conectar(self._caminho) as conexao:
+            conexao.execute(
+                "DELETE FROM dicionarios WHERE categoria=? AND termo=?",
+                (categoria, termo))
+            conexao.commit()

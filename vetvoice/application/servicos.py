@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from vetvoice.application.analise import AnalisarFala
 from vetvoice.application.atendimentos import GestaoAtendimentos
 from vetvoice.application.autenticacao import Autenticacao
+from vetvoice.application.dicionarios import GestaoDicionarios
 from vetvoice.application.propriedades import GestaoPropriedades
 from vetvoice.application.sessao import Sessao
 from vetvoice.application.sincronizacao import SincronizarAtendimentos
@@ -22,6 +23,7 @@ class Servicos:
     analise: AnalisarFala
     atendimentos: GestaoAtendimentos
     propriedades: GestaoPropriedades
+    dicionarios: GestaoDicionarios
     sincronizacao: SincronizarAtendimentos
     autenticacao: Autenticacao
     transcritor: Transcritor
