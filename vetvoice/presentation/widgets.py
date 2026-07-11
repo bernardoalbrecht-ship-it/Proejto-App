@@ -116,22 +116,36 @@ class Campo(TextInput):
 
 
 class RolagemComCampos(ScrollView):
-    """ScrollView que dá foco IMEDIATO a um campo de texto ao ser tocado (o
-    teclado do Android abre no 1º toque e continua aberto ao soltar o dedo).
-    Botões, que herdam de ButtonBehavior, não precisam desse tratamento."""
+    """ScrollView que concilia duas coisas que brigam no Android:
+      • ROLAR a lista arrastando o dedo, mesmo começando em cima de um campo;
+      • abrir o teclado no 1º TOQUE, sem precisar segurar o dedo.
+
+    Estratégia: no toque, anotamos o campo sob o dedo mas deixamos o ScrollView
+    cuidar do gesto (rolagem funciona normal). Ao SOLTAR, se o dedo quase não
+    andou (toque, não arraste), damos foco ao campo e o teclado abre; se
+    arrastou, foi rolagem e não roubamos o foco. Botões (ButtonBehavior) seguem
+    pelo caminho padrão do ScrollView."""
+
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             alvo = self._alvo_sob_toque(self, touch.pos[0], touch.pos[1])
             if alvo is not None:
-                alvo.focus = True
-                touch.push()
-                touch.apply_transform_2d(self.to_local)
-                try:
-                    alvo.on_touch_down(touch)
-                finally:
-                    touch.pop()
-                return True
+                touch.ud["_campo_alvo"] = alvo
+                touch.ud["_toque_inicial"] = tuple(touch.pos)
         return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        tratado = super().on_touch_up(touch)
+        alvo = touch.ud.get("_campo_alvo")
+        if (alvo is not None and not alvo.disabled
+                and self.collide_point(*touch.pos)):
+            x0, y0 = touch.ud.get("_toque_inicial", touch.pos)
+            tolerancia = dp(12)
+            arrastou = (abs(touch.pos[0] - x0) > tolerancia
+                        or abs(touch.pos[1] - y0) > tolerancia)
+            if not arrastou and not alvo.focus:
+                alvo.focus = True  # foi um toque -> abre o teclado
+        return tratado
 
     def _alvo_sob_toque(self, widget, tx, ty):
         for filho in widget.children:
