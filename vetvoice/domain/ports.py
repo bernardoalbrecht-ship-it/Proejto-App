@@ -49,6 +49,21 @@ class RepositorioPropriedades(ABC):
     def listar(self) -> List[str]: ...
 
 
+class RepositorioDicionarios(ABC):
+    """Termos ADICIONADOS PELO USUÁRIO para as listas editáveis (raça,
+    procedimento, diagnóstico...). As opções de fábrica ficam no config; aqui
+    guardamos só o que o usuário criou pela opção 'Outro'."""
+
+    @abstractmethod
+    def listar(self, categoria: str) -> List[str]: ...
+
+    @abstractmethod
+    def adicionar(self, categoria: str, termo: str) -> None: ...
+
+    @abstractmethod
+    def excluir(self, categoria: str, termo: str) -> None: ...
+
+
 class ParserFala(ABC):
     """Interpreta a fala transcrita em campos de um atendimento."""
 

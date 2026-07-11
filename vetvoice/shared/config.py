@@ -102,3 +102,18 @@ DIAGNOSTICO_OPCOES = [
     "Sem alterações", "Mastite", "Cetose Subclínica", "Retenção de Placenta",
     "Metrite", "Claudicação", "Prolapso Uterino", "Outro",
 ]
+
+# Chips "de fábrica" para Raça e Procedimento. O usuário amplia essas listas
+# pela opção "Outro" (os termos novos ficam salvos no banco — RF "dicionários
+# editáveis") e o parser continua reconhecendo o vocabulário completo do léxico.
+RACA_OPCOES = [
+    "Nelore", "Angus", "Girolando", "Holandês", "Jersey", "Brahman", "Mestiço",
+]
+
+PROCEDIMENTO_OPCOES = [
+    "Inseminação Artificial", "Diagnóstico de Gestação", "Vacinação",
+    "Palpação", "Exame Clínico", "Casqueamento",
+]
+
+# Categorias de dicionário editável (usadas pela tela e pela persistência).
+CATEGORIAS_DICIONARIO = ("raca", "procedimento", "diagnostico")
