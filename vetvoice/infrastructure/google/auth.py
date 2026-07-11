@@ -27,6 +27,10 @@ _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
 _EMAIL_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
+# Estado do login em andamento (para o fallback manual: colar o endereço do
+# navegador quando o redirecionamento loopback não volta sozinho no Android).
+_PENDENTE = {}
+
 
 # ---------------------------------------------------------------------------
 # Estado / configuração
@@ -237,6 +241,9 @@ def login(callback_sucesso=None, callback_erro=None, timeout: float = 300.0):
 
             verifier, desafio = _pkce()
             state = secrets.token_urlsafe(16)
+            # Guarda o contexto para o fallback manual poder concluir o login.
+            _PENDENTE.clear()
+            _PENDENTE.update(cfg=cfg, verifier=verifier, state=state, porta=porta)
             url = _montar_url_auth(cfg, porta, desafio, state)
 
             def _servir():
@@ -284,6 +291,61 @@ def login(callback_sucesso=None, callback_erro=None, timeout: float = 300.0):
     threading.Thread(target=_fluxo, daemon=True).start()
 
 
+def _extrair_code_state(entrada):
+    """Aceita a URL inteira colada da barra do navegador
+    ('http://127.0.0.1:.../?code=...&state=...') OU só o código."""
+    entrada = (entrada or "").strip()
+    if not entrada:
+        return None, None
+    if "code=" in entrada:
+        consulta = urllib.parse.urlparse(entrada).query
+        if not consulta and "?" in entrada:
+            consulta = entrada.split("?", 1)[1]
+        campos = urllib.parse.parse_qs(consulta)
+        return ((campos.get("code") or [None])[0],
+                (campos.get("state") or [None])[0])
+    return entrada, None  # colou só o código
+
+
+def completar_login_manual(entrada, callback_sucesso=None, callback_erro=None):
+    """Conclui o login com o que o usuário colou do navegador — usado quando o
+    app não voltou sozinho (loopback bloqueado no aparelho)."""
+    def _fluxo():
+        try:
+            pend = dict(_PENDENTE)
+            if not pend.get("cfg"):
+                raise RuntimeError("Toque em 'Entrar com Google' primeiro e "
+                                   "depois cole o endereço do navegador.")
+            code, state = _extrair_code_state(entrada)
+            if not code:
+                raise RuntimeError("Não encontrei o código no que foi colado. "
+                                   "Cole o endereço inteiro que abriu no "
+                                   "navegador (começa com http://127.0.0.1).")
+            if state is not None and state != pend["state"]:
+                raise RuntimeError("Falha de segurança na verificação do login.")
+            resposta = _trocar_code_por_token(pend["cfg"], code,
+                                              pend["verifier"], pend["porta"])
+            refresh = resposta.get("refresh_token")
+            access = resposta.get("access_token", "")
+            if not refresh:
+                raise RuntimeError("O Google não devolveu o token contínuo. "
+                                   "Remova o app das permissões da sua conta "
+                                   "Google e entre de novo.")
+            email = _buscar_email(access)
+            _salvar_token({
+                "refresh_token": refresh,
+                "access_token": access,
+                "expira_em": time.time() + int(resposta.get("expires_in", 3600)),
+                "email": email,
+            })
+            if callback_sucesso:
+                callback_sucesso(email)
+        except Exception as erro:
+            if callback_erro:
+                callback_erro(str(erro))
+    threading.Thread(target=_fluxo, daemon=True).start()
+
+
 class AutenticadorGoogle(Autenticador):
     """Adapta as funções deste módulo à porta `Autenticador`."""
 
@@ -298,6 +360,11 @@ class AutenticadorGoogle(Autenticador):
 
     def login(self, callback_sucesso=None, callback_erro=None) -> None:
         login(callback_sucesso=callback_sucesso, callback_erro=callback_erro)
+
+    def completar_manual(self, entrada, callback_sucesso=None,
+                         callback_erro=None) -> None:
+        completar_login_manual(entrada, callback_sucesso=callback_sucesso,
+                               callback_erro=callback_erro)
 
     def logout(self) -> None:
         logout()

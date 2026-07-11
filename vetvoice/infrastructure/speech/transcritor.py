@@ -54,13 +54,17 @@ def mensagem_erro_audio(codigo) -> str:
 
 
 def iniciar_transcricao_ao_vivo(callback_parcial=None, callback_final=None,
-                                callback_erro=None, preferir_offline=True):
+                                callback_erro=None, preferir_offline=True,
+                                continuo=True):
     """Começa a ouvir o microfone e transcrever AO VIVO. Devolve uma sessão
-    com .parar()/.cancelar()."""
+    com .parar()/.cancelar(). Com `continuo=True` (padrão no Android), a escuta
+    NÃO se desliga sozinha no silêncio: reinicia automaticamente e só finaliza
+    quando o usuário toca para parar (gravação de blocos longos e de rondas)."""
     global _SESSAO_ATIVA
     if _no_android():
         _SESSAO_ATIVA = _iniciar_android(callback_parcial, callback_final,
-                                         callback_erro, preferir_offline)
+                                         callback_erro, preferir_offline,
+                                         continuo)
     else:
         _SESSAO_ATIVA = _iniciar_desktop(callback_parcial, callback_final,
                                          callback_erro)
@@ -71,7 +75,7 @@ def iniciar_transcricao_ao_vivo(callback_parcial=None, callback_final=None,
 # ANDROID — SpeechRecognizer (ao vivo, com preferência offline)
 # ---------------------------------------------------------------------------
 def _iniciar_android(callback_parcial, callback_final, callback_erro,
-                     preferir_offline):
+                     preferir_offline, continuo=True):
     from jnius import autoclass, PythonJavaClass, java_method
     from android.runnable import run_on_ui_thread
 
@@ -81,6 +85,8 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
     PythonActivity = autoclass("org.kivy.android.PythonActivity")
 
     RESULTS = SpeechRecognizer.RESULTS_RECOGNITION
+    # O listener roda em Java e precisa achar a sessão Python; guardamos aqui.
+    ref = {}
 
     def _texto_do_bundle(bundle):
         try:
@@ -97,20 +103,21 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
 
         @java_method("(Landroid/os/Bundle;)V")
         def onPartialResults(self, results):
-            if callback_parcial:
-                texto = _texto_do_bundle(results)
-                if texto:
-                    callback_parcial(texto)
+            s = ref.get("s")
+            if s is not None:
+                s._ao_parcial(_texto_do_bundle(results))
 
         @java_method("(Landroid/os/Bundle;)V")
         def onResults(self, results):
-            if callback_final:
-                callback_final(_texto_do_bundle(results))
+            s = ref.get("s")
+            if s is not None:
+                s._ao_utterance(_texto_do_bundle(results))
 
         @java_method("(I)V")
         def onError(self, erro):
-            if callback_erro:
-                callback_erro(int(erro))
+            s = ref.get("s")
+            if s is not None:
+                s._ao_erro(int(erro))
 
         @java_method("(Landroid/os/Bundle;)V")
         def onReadyForSpeech(self, params):
@@ -137,9 +144,20 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
             pass
 
     class _SessaoAndroid:
+        # Erros que, no modo contínuo, significam apenas "silêncio / não ouvi" e
+        # NÃO devem encerrar a gravação — só reiniciar a escuta.
+        _ERROS_SILENCIO = {6, 7}     # ERROR_SPEECH_TIMEOUT, ERROR_NO_MATCH
+        _MAX_ERROS_SEGUIDOS = 5      # trava contra loop de erro sem fala
+
         def __init__(self):
             self._recognizer = None
             self._listener = _Listener()
+            self._acumulado = []     # frases já finalizadas
+            self._parando = False
+            self._erros_seguidos = 0
+
+        def _texto(self):
+            return " ".join(p for p in self._acumulado if p).strip()
 
         def _criar_intent(self):
             intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
@@ -148,17 +166,6 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.IDIOMA)
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, True)
             intent.putExtra("android.speech.extra.DICTATION_MODE", True)
-            # Tolera PAUSAS mais longas antes de encerrar (o veterinário fala em
-            # blocos: "vaca 324..." <pausa> "...inseminação"). São dicas — nem
-            # todo motor respeita, mas não atrapalham.
-            intent.putExtra(
-                "android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS",
-                4000)
-            intent.putExtra(
-                "android.speech.extra."
-                "SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 4000)
-            intent.putExtra(
-                "android.speech.extra.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 12000)
             if preferir_offline:
                 try:
                     intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, True)
@@ -180,7 +187,57 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
             self._recognizer.startListening(self._criar_intent())
 
         @run_on_ui_thread
+        def _reiniciar(self):
+            if self._parando or self._recognizer is None:
+                return
+            try:
+                self._recognizer.cancel()
+            except Exception:
+                pass
+            try:
+                self._recognizer.startListening(self._criar_intent())
+            except Exception:
+                pass
+
+        # --- eventos vindos do listener (Java) ---
+        def _ao_parcial(self, texto):
+            if callback_parcial and texto:
+                base = self._texto()
+                callback_parcial((base + " " + texto).strip() if base else texto)
+
+        def _ao_utterance(self, texto):
+            texto = (texto or "").strip()
+            if texto:
+                self._acumulado.append(texto)
+                self._erros_seguidos = 0
+                if callback_parcial:
+                    callback_parcial(self._texto())
+            if self._parando or not continuo:
+                if callback_final:
+                    callback_final(self._texto())
+            else:
+                self._reiniciar()  # segue ouvindo até o toque de parar
+
+        def _ao_erro(self, codigo):
+            if self._parando:
+                if callback_final:
+                    callback_final(self._texto())
+                return
+            if continuo and codigo in self._ERROS_SILENCIO:
+                self._erros_seguidos += 1
+                if self._erros_seguidos <= self._MAX_ERROS_SEGUIDOS:
+                    self._reiniciar()
+                else:
+                    # Muito tempo sem fala: encerra sem erro, guardando o texto.
+                    if callback_final:
+                        callback_final(self._texto())
+                return
+            if callback_erro:
+                callback_erro(codigo)
+
+        @run_on_ui_thread
         def parar(self):
+            self._parando = True
             if self._recognizer is not None:
                 try:
                     self._recognizer.stopListening()
@@ -189,6 +246,7 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
 
         @run_on_ui_thread
         def cancelar(self):
+            self._parando = True
             if self._recognizer is not None:
                 try:
                     self._recognizer.cancel()
@@ -198,6 +256,7 @@ def _iniciar_android(callback_parcial, callback_final, callback_erro,
                 self._recognizer = None
 
     sessao = _SessaoAndroid()
+    ref["s"] = sessao
     sessao.iniciar()
     return sessao
 

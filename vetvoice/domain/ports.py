@@ -103,6 +103,13 @@ class Autenticador(ABC):
     def login(self, callback_sucesso: Callable = None,
               callback_erro: Callable = None) -> None: ...
 
+    def completar_manual(self, entrada: str, callback_sucesso: Callable = None,
+                         callback_erro: Callable = None) -> None:
+        """Fallback opcional: concluir o login com o endereço/código colado do
+        navegador (quando o redirecionamento automático não volta ao app)."""
+        if callback_erro:
+            callback_erro("Conclusão manual do login não está disponível.")
+
     @abstractmethod
     def logout(self) -> None: ...
 

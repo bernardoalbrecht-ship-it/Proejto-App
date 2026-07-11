@@ -127,6 +127,13 @@ class TelaInicial(Screen):
         botao_iniciar.bind(on_release=self.iniciar)
         corpo.add_widget(botao_iniciar)
 
+        # Nova Ronda: grava a fazenda inteira e depois separa por animal.
+        botao_ronda = Botao(
+            texto=rotulo_icone("prancheta", "Nova ronda (fazenda inteira)"),
+            cor=CORES["azul"], size_hint_y=None, height=dp(52), font_size="15sp")
+        botao_ronda.bind(on_release=self.iniciar_ronda)
+        corpo.add_widget(botao_ronda)
+
         scroll.add_widget(corpo)
         raiz.add_widget(scroll)
         self.add_widget(raiz)
@@ -334,6 +341,16 @@ class TelaInicial(Screen):
         sessao.propriedade = self.campo_propriedade.text.strip()
         sessao.tipo_producao = self.seletor_tipo.valor
         self.ir("atendimento")
+
+    def iniciar_ronda(self, *_):
+        if not self.campo_propriedade.text.strip():
+            aviso("Atenção",
+                  "Informe o nome da propriedade para começar a ronda.")
+            return
+        sessao = self.servicos.sessao
+        sessao.propriedade = self.campo_propriedade.text.strip()
+        sessao.tipo_producao = self.seletor_tipo.valor
+        self.ir("ronda")
 
     def sincronizar(self, *_):
         resultado = self.servicos.sincronizacao.executar(

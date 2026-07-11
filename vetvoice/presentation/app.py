@@ -26,6 +26,7 @@ from vetvoice.presentation.screens.configuracoes import TelaConfig
 from vetvoice.presentation.screens.historico import TelaHistorico
 from vetvoice.presentation.screens.inicial import TelaInicial
 from vetvoice.presentation.screens.login import TelaLogin
+from vetvoice.presentation.screens.ronda import TelaRonda
 from vetvoice.presentation.screens.splash import TelaSplash
 from vetvoice.shared import config
 
@@ -67,6 +68,7 @@ class AppVeterinaria(App):
         self.sm.add_widget(TelaLogin(self.servicos, name="login"))
         self.sm.add_widget(TelaInicial(self.servicos, name="inicial"))
         self.sm.add_widget(TelaAtendimento(self.servicos, name="atendimento"))
+        self.sm.add_widget(TelaRonda(self.servicos, name="ronda"))
         self.sm.add_widget(TelaHistorico(self.servicos, name="historico"))
         self.sm.add_widget(TelaConfig(self.servicos, name="config"))
         self.sm.bind(current=self._ao_trocar_tela)
