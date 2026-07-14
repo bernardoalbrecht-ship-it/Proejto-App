@@ -65,10 +65,34 @@ jobs:
             find .buildozer/android/platform/build -name "*.o" -type f -delete 2>/dev/null || true
           fi
 
-      - name: Compilar o APK (Debug)
+      - name: Configurar credenciais do Login com Google (se o segredo existir)
+        # O JSON do "OAuth Client" NÃO fica no repositório (é sensível). Aqui
+        # ele é escrito a partir do segredo GOOGLE_OAUTH_CLIENT_JSON do
+        # GitHub Actions, para ser empacotado no APK. Sem o segredo, o app
+        # compila normalmente e apenas mostra "login não configurado".
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
         run: |
-          export PATH="/usr/lib/ccache:$PATH"
+          if [ -n "$GOOGLE_OAUTH_CLIENT_JSON" ]; then
+            mkdir -p credenciais
+            printf '%s' "$GOOGLE_OAUTH_CLIENT_JSON" > credenciais/oauth_client.json
+            echo "credenciais/oauth_client.json criado a partir do segredo."
+          else
+            echo "Segredo GOOGLE_OAUTH_CLIENT_JSON ausente; login com Google ficará desativado neste APK."
+          fi
+
+      - name: Compilar o APK (Debug)
+        # IMPORTANTE: o Android Gradle Plugin exige Java 17, mas o JAVA_HOME
+        # padrão do runner pode apontar para outra versão na hora em que o
+        # Buildozer chama o gradlew (foi isso que já quebrou o build antes:
+        # "Android Gradle plugin requires Java 17 ... using Java 11").
+        # Forçamos o Java 17 (JAVA_HOME_17_X64 já existe no runner) antes de
+        # compilar.
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="/usr/lib/ccache:$JAVA_HOME/bin:$PATH"
           export USE_CCACHE=1
+          java -version
           yes | buildozer android debug
 
       - name: Prunar arquivos de build temporários pós-compilação (Compactação Crítica)
