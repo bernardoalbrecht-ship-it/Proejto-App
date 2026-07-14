@@ -1,0 +1,92 @@
+name: Gerar APK do VacaVet (Otimizado e Compactado)
+
+# Quando roda:
+#  - a cada push nas branches main/master
+#  - manualmente pelo botão "Run workflow" na aba Actions do GitHub
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compilar APK (Android)
+    # Ubuntu 22.04: tem o libtinfo5 que o toolchain do Android precisa
+    # (no 24.04 esse pacote foi removido e o build quebra).
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Preparar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Configurar Cache do ccache (Acelera re-compilações)
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+
+      - name: Configurar Cache do Buildozer (SDK/NDK)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Instalar dependências do sistema e utilitários
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk python3-pip autoconf libtool \
+            pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 \
+            cmake libffi-dev libssl-dev build-essential ccache libltdl-dev
+
+      - name: Instalar Buildozer e Cython
+        run: |
+          python -m pip install --upgrade pip
+          pip install buildozer cython==0.29.36
+
+      - name: Inicializar ccache e limpar caches Buildozer desnecessários
+        run: |
+          ccache --max-size=2G
+          ccache --show-stats
+          if [ -d ".buildozer/android/platform/build" ]; then
+            echo "Limpando diretórios de compilação temporários antigos para compactar o cache..."
+            find .buildozer/android/platform/build -name "*.o" -type f -delete 2>/dev/null || true
+          fi
+
+      - name: Compilar o APK (Debug)
+        run: |
+          export PATH="/usr/lib/ccache:$PATH"
+          export USE_CCACHE=1
+          yes | buildozer android debug
+
+      - name: Prunar arquivos de build temporários pós-compilação (Compactação Crítica)
+        if: always()
+        run: |
+          ccache --show-stats
+          # Pruna o diretório .buildozer local removendo arquivos intermediários descartáveis,
+          # mantendo apenas as dists prontas, SDKs e NDKs para que o cache permaneça compacto (<500MB em vez de 5GB+!)
+          if [ -d ".buildozer" ]; then
+            echo "Compactando diretório .buildozer antes de salvar o cache..."
+            find .buildozer -name "*.o" -type f -delete 2>/dev/null || true
+            find .buildozer -name "*.pyc" -type f -delete 2>/dev/null || true
+            find .buildozer -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+          fi
+
+      - name: Publicar o APK como artefato para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: vacavet-apk
+          path: bin/*.apk
+          if-no-files-found: error
