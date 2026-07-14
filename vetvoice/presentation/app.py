@@ -111,6 +111,31 @@ class AppVeterinaria(App):
             pass
 
     # -----------------------------------------------------------------------
+    # CICLO DE VIDA NO ANDROID (a correção da "tela preta")
+    # -----------------------------------------------------------------------
+    # No Android, quando o app vai para segundo plano (ex.: o navegador abre
+    # para o login com Google), o Kivy chama on_pause. Se on_pause NÃO existir
+    # ou retornar False, o sistema MATA o aplicativo — ao voltar, só resta uma
+    # tela preta e é preciso reiniciar. Era exatamente isso que acontecia no
+    # login com Google. Retornar True mantém o app vivo em segundo plano.
+    def on_pause(self):
+        # Aproveita para salvar um backup do banco: se o Android decidir
+        # encerrar o app enquanto pausado, nada se perde.
+        try:
+            self._fazer_backup_seguro()
+        except Exception:
+            pass
+        return True
+
+    def on_resume(self):
+        # Ao voltar do navegador, força um redesenho (alguns aparelhos perdem
+        # o contexto OpenGL na pausa e voltam com a tela congelada).
+        try:
+            Window.canvas.ask_update()
+        except Exception:
+            pass
+
+    # -----------------------------------------------------------------------
     # BACKUP AUTOMÁTICO AO FECHAR (cópia extra do banco, além do save no toque)
     # -----------------------------------------------------------------------
     def on_request_close(self, *args, **kwargs):
