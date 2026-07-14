@@ -30,8 +30,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ github.sha }}
-          restore-keys: ccache-${{ runner.os }}-
+          # Sufixo -v2: invalida caches antigos de propósito (build do zero).
+          key: ccache-v2-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-v2-${{ runner.os }}-
 
       - name: Configurar Cache do Buildozer (SDK/NDK)
         uses: actions/cache@v4
@@ -39,9 +40,10 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          # Sufixo -v2: invalida caches antigos de propósito (build do zero).
+          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-
+            buildozer-v2-${{ runner.os }}-
 
       - name: Instalar dependências do sistema e utilitários
         run: |

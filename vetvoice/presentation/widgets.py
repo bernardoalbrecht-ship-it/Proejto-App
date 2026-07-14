@@ -116,30 +116,25 @@ class Campo(TextInput):
 
 
 class RolagemComCampos(ScrollView):
-    """ScrollView que resolve a queda de braço entre ROLAR e TOCAR num botão,
-    campo ou chip lá dentro (Android): por padrão o Kivy deixa o widget sob o
-    dedo (botão/campo) reagir na hora do toque, ANTES do ScrollView decidir se
-    é rolagem — então começar a arrastar em cima de um botão nunca rola nada.
+    """ScrollView com a arbitragem de toque NATIVA do Kivy, apenas calibrada.
 
-    A correção usa o mecanismo interno do próprio ScrollView (o mesmo que ele
-    usa quando não há nada tocável sob o dedo): ao tocar, chamamos
-    `on_scroll_start(touch, check_children=False)` em vez de deixar os filhos
-    responderem primeiro. Isso faz o ScrollView "segurar" o toque por
-    `scroll_timeout` ms: se o dedo andar mais que `scroll_distance` nesse
-    intervalo, vira rolagem de verdade; senão, o Kivy automaticamente repassa
-    o toque (como um toque novo) para o botão/campo sob o dedo, que reage
-    normalmente (clique, foco do teclado etc.). Nenhum filho consegue mais
-    "engolir" o toque antes dessa decisão."""
+    Não sobrescrevemos NENHUM método de toque — as versões anteriores desta
+    classe tentavam decidir "toque vs. arraste" na mão e era isso que quebrava
+    a rolagem. O ScrollView padrão do Kivy já resolve o problema sozinho: ele
+    segura cada toque por até `scroll_timeout` ms; se o dedo andar mais que
+    `scroll_distance` nesse tempo, vira rolagem (mesmo começando em cima de um
+    botão, chip ou campo de texto); se não andar, o Kivy reenvia o toque ao
+    widget de baixo, que reage normal (clique, foco, teclado).
+
+    Só ajustamos os dois valores documentados: o timeout padrão (55 ms) é
+    curto demais para dedo no celular — quem começa a arrastar devagar perdia
+    a janela e o toque ia para o botão. 400 ms dá tempo de sobra para o gesto
+    e não atrasa nada visível (toques rápidos disparam ao soltar o dedo)."""
 
     def __init__(self, **kwargs):
+        kwargs.setdefault("scroll_timeout", 400)
+        kwargs.setdefault("scroll_distance", dp(20))
         super().__init__(**kwargs)
-        self.scroll_timeout = 250
-        self.scroll_distance = dp(12)
-
-    def on_touch_down(self, touch):
-        if not self.collide_point(*touch.pos):
-            return False
-        return self.on_scroll_start(touch, check_children=False)
 
 
 def desfocar_campos(widget):
