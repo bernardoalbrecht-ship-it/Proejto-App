@@ -116,56 +116,30 @@ class Campo(TextInput):
 
 
 class RolagemComCampos(ScrollView):
-    """ScrollView que concilia duas coisas que brigam no Android:
-      • ROLAR a lista arrastando o dedo, mesmo começando em cima de um campo;
-      • abrir o teclado no 1º TOQUE, sem precisar segurar o dedo.
+    """ScrollView que resolve a queda de braço entre ROLAR e TOCAR num botão,
+    campo ou chip lá dentro (Android): por padrão o Kivy deixa o widget sob o
+    dedo (botão/campo) reagir na hora do toque, ANTES do ScrollView decidir se
+    é rolagem — então começar a arrastar em cima de um botão nunca rola nada.
 
-    Estratégia: no toque, anotamos o campo sob o dedo mas deixamos o ScrollView
-    cuidar do gesto (rolagem funciona normal). Ao SOLTAR, se o dedo quase não
-    andou (toque, não arraste), damos foco ao campo e o teclado abre; se
-    arrastou, foi rolagem e não roubamos o foco. Botões (ButtonBehavior) seguem
-    pelo caminho padrão do ScrollView."""
+    A correção usa o mecanismo interno do próprio ScrollView (o mesmo que ele
+    usa quando não há nada tocável sob o dedo): ao tocar, chamamos
+    `on_scroll_start(touch, check_children=False)` em vez de deixar os filhos
+    responderem primeiro. Isso faz o ScrollView "segurar" o toque por
+    `scroll_timeout` ms: se o dedo andar mais que `scroll_distance` nesse
+    intervalo, vira rolagem de verdade; senão, o Kivy automaticamente repassa
+    o toque (como um toque novo) para o botão/campo sob o dedo, que reage
+    normalmente (clique, foco do teclado etc.). Nenhum filho consegue mais
+    "engolir" o toque antes dessa decisão."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Segura o gesto por mais tempo antes de "entregar" o toque a um botão.
-        # Sem isso, começar o arraste EM CIMA de um botão/chip não rolava (o
-        # botão engolia o toque). 250 ms deixa a rolagem começar mesmo sobre
-        # botões, sem atrapalhar toques rápidos (que disparam ao soltar).
         self.scroll_timeout = 250
-        self.scroll_distance = dp(14)
+        self.scroll_distance = dp(12)
 
     def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            alvo = self._alvo_sob_toque(self, touch.pos[0], touch.pos[1])
-            if alvo is not None:
-                touch.ud["_campo_alvo"] = alvo
-                touch.ud["_toque_inicial"] = tuple(touch.pos)
-        return super().on_touch_down(touch)
-
-    def on_touch_up(self, touch):
-        tratado = super().on_touch_up(touch)
-        alvo = touch.ud.get("_campo_alvo")
-        if (alvo is not None and not alvo.disabled
-                and self.collide_point(*touch.pos)):
-            x0, y0 = touch.ud.get("_toque_inicial", touch.pos)
-            tolerancia = dp(12)
-            arrastou = (abs(touch.pos[0] - x0) > tolerancia
-                        or abs(touch.pos[1] - y0) > tolerancia)
-            if not arrastou and not alvo.focus:
-                alvo.focus = True  # foi um toque -> abre o teclado
-        return tratado
-
-    def _alvo_sob_toque(self, widget, tx, ty):
-        for filho in widget.children:
-            achado = self._alvo_sob_toque(filho, tx, ty)
-            if achado is not None:
-                return achado
-        if isinstance(widget, TextInput) and not widget.disabled:
-            wx, wy = widget.to_window(widget.x, widget.y)
-            if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
-                return widget
-        return None
+        if not self.collide_point(*touch.pos):
+            return False
+        return self.on_scroll_start(touch, check_children=False)
 
 
 def desfocar_campos(widget):
@@ -234,17 +208,18 @@ class BotaoGravarRedondo(ButtonBehavior, Widget):
 
 class ControleGravacao(BoxLayout):
     """Botão redondo de gravar + legenda que alterna entre repouso e 'ouvindo'."""
-    def __init__(self, ao_tocar=None, rotulo="GRAVAR E FALAR", **kwargs):
+    def __init__(self, ao_tocar=None, rotulo="GRAVAR E FALAR",
+                diametro=dp(76), **kwargs):
         kwargs.setdefault("orientation", "vertical")
         kwargs.setdefault("size_hint_y", None)
-        kwargs.setdefault("height", dp(112))
+        kwargs.setdefault("height", diametro + dp(36))
         kwargs.setdefault("spacing", dp(6))
         super().__init__(**kwargs)
         self._rotulo_idle = rotulo
 
         centro = AnchorLayout(anchor_x="center", anchor_y="center",
-                              size_hint_y=None, height=dp(84))
-        self.botao = BotaoGravarRedondo(ao_tocar=ao_tocar)
+                              size_hint_y=None, height=diametro + dp(8))
+        self.botao = BotaoGravarRedondo(ao_tocar=ao_tocar, diametro=diametro)
         centro.add_widget(self.botao)
         self.add_widget(centro)
 

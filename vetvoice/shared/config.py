@@ -24,6 +24,11 @@ DATABASE_PATH = DATA_DIR / "atendimentos.db"
 CREDENTIALS_DIR = BASE_DIR / "credenciais"
 CREDENTIALS_DIR.mkdir(exist_ok=True)
 
+# Transcrições brutas da Ronda (fazenda inteira), uma por gravação — cópia de
+# segurança em .txt antes de segmentar por animal e enviar à planilha.
+RONDAS_DIR = DATA_DIR / "rondas"
+RONDAS_DIR.mkdir(exist_ok=True)
+
 # ----------------------------------------------------------------------------
 # INTERRUPTORES DE FUNCIONALIDADE (liga/desliga recursos)
 # ----------------------------------------------------------------------------

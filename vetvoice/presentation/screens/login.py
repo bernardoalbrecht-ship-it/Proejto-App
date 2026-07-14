@@ -77,11 +77,17 @@ class TelaLogin(Screen):
         # Fallback: se o navegador não voltar sozinho para o app (loopback
         # bloqueado em alguns aparelhos), o usuário cola aqui o endereço que
         # abriu (começa com http://127.0.0.1) e conclui o login.
-        cartao.add_widget(etiqueta("Não voltou sozinho? Cole o endereço do navegador"))
+        cartao.add_widget(texto_livre(
+            "[b]Ficou preso no navegador depois de autorizar?[/b] Acontece em "
+            "alguns celulares: a página final (\"não é possível acessar o "
+            "site\" ou parecida) não é um erro — é só o app não tendo voltado "
+            "sozinho. Toque e segure a barra de endereço do navegador, copie o "
+            "link inteiro (começa com http://127.0.0.1) e cole abaixo.",
+            cor=CORES["texto_suave"], tamanho="12sp", altura=dp(84)))
         self.campo_code = Campo(multiline=False, size_hint_y=None, height=dp(44),
-                                hint_text="http://127.0.0.1:...?code=...")
+                                hint_text="Cole aqui o link copiado do navegador")
         cartao.add_widget(self.campo_code)
-        botao_concluir = Botao(texto="Concluir login com o código",
+        botao_concluir = Botao(texto="Concluir login com esse link",
                                cor=CORES["verde_claro"], size_hint_y=None,
                                height=dp(46), font_size="13sp")
         botao_concluir.bind(on_release=self._concluir_manual)
@@ -121,8 +127,11 @@ class TelaLogin(Screen):
             return
 
         aviso("Login com Google",
-              "Vou abrir o navegador para você entrar na sua conta Google e "
-              "autorizar. Depois de autorizar, volte para o VetVoice.")
+              "Vou abrir o navegador. Entre na sua conta Google, autorize e "
+              "o app deve reabrir sozinho.\n\nSe isso não acontecer e o "
+              "navegador ficar parado numa página, é só voltar aqui: mais "
+              "abaixo nesta tela tem um campo para colar o endereço e "
+              "concluir o login na mão.")
 
         autenticacao.login(callback_sucesso=self._ao_sucesso_login,
                            callback_erro=self._ao_erro_login)
