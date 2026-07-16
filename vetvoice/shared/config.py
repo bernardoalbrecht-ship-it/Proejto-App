@@ -60,9 +60,16 @@ GOOGLE_SHEETS_CREDENTIALS = CREDENTIALS_DIR / "google_sheets.json"
 GOOGLE_OAUTH_CLIENT = CREDENTIALS_DIR / "oauth_client.json"
 GOOGLE_TOKEN_PATH = DATA_DIR / "google_token.json"
 GOOGLE_SHEETS_INDEX = DATA_DIR / "google_sheets_index.json"
+# Só escopos NÃO-SENSÍVEIS, de propósito. `drive.file` dá acesso apenas aos
+# arquivos que o próprio app cria — que é exatamente o nosso caso: o app cria a
+# planilha da propriedade, escreve nela e nunca toca em outro arquivo do Drive.
+#
+# NÃO reintroduzir `auth/spreadsheets`: ele é escopo sensível e obriga o app a
+# passar pela verificação do Google (política de privacidade publicada, domínio
+# verificado, semanas de revisão) antes de sair do modo Testing. Com `drive.file`
+# o app cria, busca e escreve nas próprias planilhas sem essa burocracia.
 GOOGLE_OAUTH_SCOPES = (
     "openid email "
-    "https://www.googleapis.com/auth/spreadsheets "
     "https://www.googleapis.com/auth/drive.file"
 )
 

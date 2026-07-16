@@ -49,8 +49,10 @@ PROCEDIMENTOS = Vocabulary([
 # STATUS REPRODUTIVO — só as duas opções da tela (Prenha / Vazia)
 # ---------------------------------------------------------------------------
 STATUS = Vocabulary([
-    Term("Prenha", ("prenha", "prenhe", "gestante", "gravida", "positiva")),
-    Term("Vazia", ("vazia", "negativa", "nao prenha")),
+    Term("Prenha", ("prenha", "prenhas", "prenhe", "prenhes", "gestante",
+                    "gestantes", "gravida", "gravidas", "positiva",
+                    "positivas")),
+    Term("Vazia", ("vazia", "vazias", "negativa", "negativas", "nao prenha")),
 ])
 
 # ---------------------------------------------------------------------------

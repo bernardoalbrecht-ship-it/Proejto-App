@@ -51,7 +51,7 @@ def extrair_id_vaca(texto: str) -> str:
 # ---------------------------------------------------------------------------
 def extrair_peso(texto: str) -> str:
     """'pesa 450', 'peso de 450 kg', '450 quilos'..."""
-    p = re.search(r"(?:pesa|peso(?:\s+de)?)\s+(\d{2,4})\s*(?:kg|quilos?|k)?", texto)
+    p = re.search(r"(?:pesa(?:ndo|m)?|peso(?:\s+de)?)\s+(\d{2,4})\s*(?:kg|quilos?|k)?", texto)
     if p:
         return p.group(1)
     p = re.search(r"(\d{2,4})\s*(?:kg|quilos?)\b", texto)
@@ -152,11 +152,23 @@ _GATILHOS_PROPRIEDADE = (
     "estancia", "rancho", "chacara",
 )
 _PARADAS_PROPRIEDADE = {
-    "e", "na", "no", "da", "do", "de", "dentro", "vaca", "vaquinha", "brinco",
+    "e", "na", "no", "dentro", "vaca", "vaquinha", "brinco",
     "animal", "com", "que", "adicionar", "adiciona", "coloca", "colocar",
     "anota", "anotar", "registrar", "registra", "fiz", "apliquei", "feito",
     "fez", "fazer", "aplicar", "dei", "deu",
+    # Subgrupo começa aqui: o nome da propriedade acabou.
+    # ("fazenda Santa Rita piquete do fundo" -> "Santa Rita", não "Santa Rita Piquete")
+    "piquete", "lote", "campo", "mangueira", "retiro", "invernada", "potreiro",
 }
+
+# Conectores que aparecem DENTRO de nome de fazenda ("fazenda do Junho",
+# "sítio do João", "fazenda de Cima"). Eram paradas e por isso o nome saía
+# vazio: o gatilho batia em "fazenda", a palavra seguinte era "do", parava ali
+# e o app dizia "não identifiquei a fazenda" mesmo o usuário tendo falado.
+# Regra: conector no COMEÇO é ignorado (o nome útil vem depois — "do Junho"
+# vira "Junho"); depois que o nome já começou, o conector encerra o nome
+# ("fazenda Santa Rita de manhã" -> "Santa Rita").
+_CONECTORES_NOME = {"do", "da", "de", "dos", "das"}
 
 
 def _e_termo_clinico(token: str) -> bool:
@@ -177,6 +189,10 @@ def extrair_propriedade(texto: str) -> str:
             continue
         nome = []
         for token in re.findall(r"[a-z]+", m.group(1)):
+            if token in _CONECTORES_NOME:
+                if not nome:
+                    continue  # "fazenda do Junho" -> ignora o "do", segue
+                break         # "fazenda Santa Rita de manhã" -> para em "de"
             if token in _PARADAS_PROPRIEDADE or _e_termo_clinico(token):
                 break
             nome.append(token)

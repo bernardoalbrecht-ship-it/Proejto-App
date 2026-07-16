@@ -126,8 +126,19 @@ class TelaRonda(Screen):
             return
         propriedade = self.servicos.sessao.propriedade.strip()
         if not propriedade:
+            # Voz primeiro: se a fazenda foi DITA na gravação ("estou na
+            # fazenda Boa Vista, vaca 12..."), usa ela — não faz o veterinário
+            # voltar de tela para digitar o que ele acabou de falar.
+            propriedade = (self.servicos.analise.analisar(texto)
+                           .get("propriedade") or "").strip()
+            if propriedade:
+                self.servicos.sessao.propriedade = propriedade
+                self.servicos.propriedades.adicionar(propriedade)
+        if not propriedade:
             aviso("Falta a fazenda",
-                  "Defina a propriedade na tela inicial antes da ronda.")
+                  "Diga o nome da fazenda na gravação (ex.: \"fazenda Boa "
+                  "Vista, vaca 12...\") ou defina a propriedade na tela "
+                  "inicial antes da ronda.")
             return
         segmentos = segmentar_por_animal(texto)
         if not segmentos:

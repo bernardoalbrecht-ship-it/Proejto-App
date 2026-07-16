@@ -13,6 +13,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen
 from kivy.uix.widget import Widget
 
+from vetvoice.domain.parsing.segmentacao import segmentar_por_animal
 from vetvoice.presentation.dialogs import aviso, confirmar
 from vetvoice.presentation.gravacao import alternar_gravacao
 from vetvoice.presentation.theme import CORES, pintar_fundo, rotulo_icone
@@ -67,9 +68,9 @@ class TelaInicial(Screen):
 
         # --- Cartão-herói: gravar e ditar o atendimento ---
         hero = Cartao(padding=[dp(16), dp(20)], spacing=dp(6))
-        hero.add_widget(texto_livre("Toque e dite o atendimento",
-                                    cor=CORES["texto_suave"], tamanho="14sp",
-                                    altura=dp(22)))
+        hero.add_widget(texto_livre(
+            "Toque e fale — um animal ou a fazenda inteira",
+            cor=CORES["texto_suave"], tamanho="14sp", altura=dp(22)))
         centro = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(112))
         self.botao_gravar_nota = ControleGravacao(
             ao_tocar=self.gravar_nota,
@@ -81,7 +82,7 @@ class TelaInicial(Screen):
             size_hint_y=None, height=dp(64))
         hero.add_widget(self.nota_transcricao)
         botao_interpretar = Botao(
-            texto=rotulo_icone("estrelas", "Preencher e abrir atendimento"),
+            texto=rotulo_icone("estrelas", "Preencher com o que eu disse"),
             cor=CORES["verde_claro"], size_hint_y=None, height=dp(48),
             font_size="14sp")
         botao_interpretar.bind(on_release=self.interpretar_comando)
@@ -121,18 +122,15 @@ class TelaInicial(Screen):
         corpo.add_widget(dados)
 
         # --- Ação principal ---
+        # A ronda NÃO tem mais botão próprio: falar é uma coisa só. Se a fala
+        # citar vários animais, interpretar_comando processa como ronda; se
+        # citar um, abre o atendimento único. Quem decide é o conteúdo da
+        # fala, não um botão a mais.
         botao_iniciar = Botao(
-            texto=rotulo_icone("estetoscopio", "Iniciar atendimento"),
+            texto=rotulo_icone("estetoscopio", "Iniciar atendimento (digitar)"),
             cor=CORES["verde"], size_hint_y=None, height=dp(56), font_size="17sp")
         botao_iniciar.bind(on_release=self.iniciar)
         corpo.add_widget(botao_iniciar)
-
-        # Nova Ronda: grava a fazenda inteira e depois separa por animal.
-        botao_ronda = Botao(
-            texto=rotulo_icone("prancheta", "Nova ronda (fazenda inteira)"),
-            cor=CORES["azul"], size_hint_y=None, height=dp(52), font_size="15sp")
-        botao_ronda.bind(on_release=self.iniciar_ronda)
-        corpo.add_widget(botao_ronda)
 
         scroll.add_widget(corpo)
         raiz.add_widget(scroll)
@@ -298,6 +296,20 @@ class TelaInicial(Screen):
         sessao = self.servicos.sessao
         sessao.propriedade = propriedade
         sessao.tipo_producao = self.seletor_tipo.valor
+
+        # Vários animais na mesma fala ("vaca 22 e 23...", "vaca 12... vaca
+        # 15...") = ronda. A tela da ronda já sabe salvar tudo (txt de
+        # segurança, um atendimento por animal e sincronizar) — entregamos o
+        # texto pronto a ela em vez de duplicar essa lógica aqui.
+        segmentos = segmentar_por_animal(texto)
+        if len(segmentos) >= 2:
+            tela_ronda = self.manager.get_screen("ronda")
+            tela_ronda.transcricao.text = texto
+            self.nota_transcricao.text = ""
+            self.ir("ronda")
+            tela_ronda.processar()
+            return
+
         sessao.prefill_comando = texto
         self.ir("atendimento")
 
@@ -341,16 +353,6 @@ class TelaInicial(Screen):
         sessao.propriedade = self.campo_propriedade.text.strip()
         sessao.tipo_producao = self.seletor_tipo.valor
         self.ir("atendimento")
-
-    def iniciar_ronda(self, *_):
-        if not self.campo_propriedade.text.strip():
-            aviso("Atenção",
-                  "Informe o nome da propriedade para começar a ronda.")
-            return
-        sessao = self.servicos.sessao
-        sessao.propriedade = self.campo_propriedade.text.strip()
-        sessao.tipo_producao = self.seletor_tipo.valor
-        self.ir("ronda")
 
     def sincronizar(self, *_):
         resultado = self.servicos.sincronizacao.executar(
