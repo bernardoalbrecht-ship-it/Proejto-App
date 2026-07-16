@@ -30,20 +30,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          # Sufixo -v2: invalida caches antigos de propósito (build do zero).
-          key: ccache-v2-${{ runner.os }}-${{ github.sha }}
-          restore-keys: ccache-v2-${{ runner.os }}-
+          # Sufixo -v3: invalida o cache poluído (ver nota abaixo).
+          key: ccache-v3-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-v3-${{ runner.os }}-
 
       - name: Configurar Cache do Buildozer (SDK/NDK)
         uses: actions/cache@v4
         with:
+          # IMPORTANTE: cachear só o SDK/NDK do Android (grandes, caros de
+          # baixar, e independentes do NOSSO código). NUNCA cachear
+          # ".buildozer/android/platform/build-*" — é ali que o Buildozer
+          # guarda o dist já empacotado com o PYTHON SOURCE do app. Fazer
+          # cache-hit dessa pasta faz o Buildozer republicar um APK com
+          # código Python ANTIGO em cima de um dist reaproveitado — foi
+          # exatamente isso que causou o app fechar sozinho ao abrir depois
+          # de mudanças no código: o build "tinha sucesso" no CI em ~1 min
+          # (não recompilava nada de verdade) mas o APK gerado não continha
+          # as mudanças. Sem essa pasta no cache, todo push recompila o
+          # dist/app do zero (mais lento, ~15-20 min) só reaproveitando o
+          # download caro do SDK/NDK.
           path: |
-            ~/.buildozer
-            .buildozer
-          # Sufixo -v2: invalida caches antigos de propósito (build do zero).
-          key: buildozer-v2-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+            .buildozer/android/platform/android-sdk
+            .buildozer/android/platform/android-ndk*
+          # Sufixo -v3: invalida o cache antigo (que incluía build-*/dist).
+          key: buildozer-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-v2-${{ runner.os }}-
+            buildozer-v3-${{ runner.os }}-
 
       - name: Instalar dependências do sistema e utilitários
         run: |
@@ -101,10 +113,11 @@ jobs:
         if: always()
         run: |
           ccache --show-stats
-          # Pruna o diretório .buildozer local removendo arquivos intermediários descartáveis,
-          # mantendo apenas as dists prontas, SDKs e NDKs para que o cache permaneça compacto (<500MB em vez de 5GB+!)
+          # Só o SDK/NDK são cacheados agora (o dist/build-* NÃO entra mais no
+          # cache — ver nota no step de cache acima). Isso aqui só limpa lixo
+          # intermediário do job atual, sem efeito no que fica salvo entre runs.
           if [ -d ".buildozer" ]; then
-            echo "Compactando diretório .buildozer antes de salvar o cache..."
+            echo "Limpando arquivos intermediários do diretório .buildozer..."
             find .buildozer -name "*.o" -type f -delete 2>/dev/null || true
             find .buildozer -name "*.pyc" -type f -delete 2>/dev/null || true
             find .buildozer -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
