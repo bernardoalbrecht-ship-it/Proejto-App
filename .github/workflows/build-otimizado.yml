@@ -5,7 +5,7 @@ name: Gerar APK do VacaVet (Otimizado e Compactado)
 #  - manualmente pelo botão "Run workflow" na aba Actions do GitHub
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, bisect-1 ]
   workflow_dispatch:
 
 jobs:
