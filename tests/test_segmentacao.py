@@ -20,10 +20,38 @@ def test_vazio_nao_quebra():
 
 
 def test_dois_animais():
+    # Os trechos saem NORMALIZADOS (sem acento, minúsculos) — é sobre essa
+    # forma que o parser trabalha; a fala original fica no .txt de segurança.
     r = segmentar_por_animal("vaca 12 inseminação prenha vaca 15 mastite")
     assert [id_ for id_, _ in r] == ["12", "15"]
-    assert "inseminação" in r[0][1]
+    assert "inseminacao" in r[0][1]
     assert "mastite" in r[1][1]
+
+
+def test_grupo_com_pesos_distribuidos():
+    # Caso real de campo: dois animais numa frase só, com um peso para cada.
+    r = segmentar_por_animal(
+        "a vaca vinte e dois e vinte e três estão prenhas e pesando "
+        "trezentos e trezentos e vinte quilos cada uma")
+    assert [id_ for id_, _ in r] == ["22", "23"]
+    assert "peso 300 quilos" in r[0][1]
+    assert "peso 320 quilos" in r[1][1]
+
+
+def test_grupo_sem_pesos_compartilha_trecho():
+    r = segmentar_por_animal("aplicar na vaca 10 e 11 e 12 ivermectina")
+    assert [id_ for id_, _ in r] == ["10", "11", "12"]
+    assert all("ivermectina" in t for _, t in r)
+
+
+def test_numero_seguido_de_unidade_nao_e_animal():
+    r = segmentar_por_animal("vaca 22 e 300 quilos")
+    assert [id_ for id_, _ in r] == ["22"]
+
+
+def test_numero_por_extenso_vira_digito():
+    r = segmentar_por_animal("vaca doze protocolo iatf")
+    assert r[0][0] == "12"
 
 
 def test_une_mesmo_animal_seguido():

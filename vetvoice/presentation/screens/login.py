@@ -13,7 +13,9 @@ from vetvoice.presentation.dialogs import aviso
 from vetvoice.presentation.theme import (
     CORES, FONTE_ICONES, ICONES, pintar_fundo, rotulo_icone,
 )
-from vetvoice.presentation.widgets import Botao, Campo, Cartao, etiqueta, texto_livre
+from vetvoice.presentation.widgets import (
+    Botao, BotaoGoogle, Campo, Cartao, etiqueta, texto_livre,
+)
 
 
 class TelaLogin(Screen):
@@ -68,35 +70,50 @@ class TelaLogin(Screen):
         botao_entrar.bind(on_release=self._entrar)
         cartao.add_widget(botao_entrar)
 
-        botao_google = Botao(texto=rotulo_icone("nuvem_subir", "Entrar com Google"),
-                             cor=CORES["azul"], size_hint_y=None, height=dp(52),
-                             font_size="16sp")
+        botao_google = BotaoGoogle()
         botao_google.bind(on_release=self._entrar_google)
         cartao.add_widget(botao_google)
 
-        # Fallback: se o navegador não voltar sozinho para o app (loopback
-        # bloqueado em alguns aparelhos), o usuário cola aqui o endereço que
-        # abriu (começa com http://127.0.0.1) e conclui o login.
-        cartao.add_widget(texto_livre(
-            "[b]Ficou preso no navegador depois de autorizar?[/b] Acontece em "
-            "alguns celulares: a página final (\"não é possível acessar o "
-            "site\" ou parecida) não é um erro — é só o app não tendo voltado "
-            "sozinho. Toque e segure a barra de endereço do navegador, copie o "
-            "link inteiro (começa com http://127.0.0.1) e cole abaixo.",
-            cor=CORES["texto_suave"], tamanho="12sp", altura=dp(84)))
+        # Fallback do loopback (alguns aparelhos não voltam sozinhos do
+        # navegador): fica ESCONDIDO atrás de um toque em "Problemas para
+        # entrar?" — quem loga normal nunca vê essa parte.
+        self._link_ajuda = Botao(
+            texto="Problemas para entrar com o Google?",
+            cor=CORES["fundo"], cor_texto=CORES["texto_suave"],
+            size_hint_y=None, height=dp(34), font_size="12sp")
+        self._link_ajuda.bind(on_release=self._alternar_ajuda)
+        cartao.add_widget(self._link_ajuda)
+
+        self._caixa_ajuda = BoxLayout(orientation="vertical", spacing=dp(8),
+                                      size_hint_y=None, height=0, opacity=0,
+                                      disabled=True)
+        self._caixa_ajuda.add_widget(texto_livre(
+            "Se depois de autorizar o navegador mostrar uma página de erro "
+            "(\"não é possível acessar o site\"), o login funcionou — só "
+            "faltou voltar ao app. Copie o endereço da barra do navegador "
+            "(começa com http://127.0.0.1) e cole aqui.",
+            cor=CORES["texto_suave"], tamanho="12sp", altura=dp(72)))
         self.campo_code = Campo(multiline=False, size_hint_y=None, height=dp(44),
                                 hint_text="Cole aqui o link copiado do navegador")
-        cartao.add_widget(self.campo_code)
+        self._caixa_ajuda.add_widget(self.campo_code)
         botao_concluir = Botao(texto="Concluir login com esse link",
                                cor=CORES["verde_claro"], size_hint_y=None,
                                height=dp(46), font_size="13sp")
         botao_concluir.bind(on_release=self._concluir_manual)
-        cartao.add_widget(botao_concluir)
+        self._caixa_ajuda.add_widget(botao_concluir)
+        cartao.add_widget(self._caixa_ajuda)
 
         meio.add_widget(cartao)
         meio.add_widget(Widget())
         raiz.add_widget(meio)
         self.add_widget(raiz)
+
+    def _alternar_ajuda(self, *_):
+        """Mostra/esconde o fallback de colar o link (altura + opacidade)."""
+        escondida = self._caixa_ajuda.disabled
+        self._caixa_ajuda.disabled = not escondida
+        self._caixa_ajuda.opacity = 1 if escondida else 0
+        self._caixa_ajuda.height = dp(178) if escondida else 0
 
     def _entrar(self, *_):
         nome = self.campo_nome.text.strip()

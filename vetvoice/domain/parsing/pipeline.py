@@ -14,7 +14,7 @@ O resultado é um dicionário com as chaves dos campos de um atendimento.
 import re
 
 from vetvoice.domain.parsing import extractors, fuzzy, lexicon
-from vetvoice.domain.parsing.text import normalizar
+from vetvoice.domain.parsing.text import normalizar, normalizar_com_numeros
 
 # Ordem/keys do resultado — contrato do parser.
 CAMPOS = (
@@ -35,7 +35,10 @@ def _detectar_status(texto: str, tokens: list) -> str:
 
 def analisar(transcricao: str) -> dict:
     """Recebe a fala transcrita e devolve os campos sugeridos do atendimento."""
-    texto = normalizar(transcricao)
+    # Números por extenso viram dígitos ANTES de tudo ("vaca vinte e dois
+    # pesando trezentos quilos" -> "vaca 22 pesando 300 quilos"), porque os
+    # extratores de id/peso/dose trabalham com dígitos.
+    texto = normalizar_com_numeros(transcricao)
     tokens = texto.split()
 
     resultado = {campo: "" for campo in CAMPOS}

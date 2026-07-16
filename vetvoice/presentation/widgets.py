@@ -9,7 +9,7 @@ módulo `theme`; aqui fica o comportamento dos widgets.
 from kivy.animation import Animation
 from kivy.app import App
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
@@ -135,6 +135,78 @@ class RolagemComCampos(ScrollView):
         kwargs.setdefault("scroll_timeout", 400)
         kwargs.setdefault("scroll_distance", dp(20))
         super().__init__(**kwargs)
+
+
+class _LogoGoogleG(Widget):
+    """O "G" do Google desenhado em canvas (4 arcos + barra), sem depender de
+    imagem — nada de asset novo arriscando o build do APK."""
+
+    _VERMELHO = (0.918, 0.263, 0.208, 1)
+    _AZUL = (0.259, 0.522, 0.957, 1)
+    _VERDE = (0.204, 0.659, 0.325, 1)
+    _AMARELO = (0.984, 0.737, 0.020, 1)
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("size_hint", (None, None))
+        super().__init__(**kwargs)
+        self.size = (dp(22), dp(22))
+        grosso = dp(2.4)
+        with self.canvas:
+            Color(*self._VERMELHO)
+            self._arco_vermelho = Line(width=grosso)
+            Color(*self._AMARELO)
+            self._arco_amarelo = Line(width=grosso)
+            Color(*self._VERDE)
+            self._arco_verde = Line(width=grosso)
+            Color(*self._AZUL)
+            self._arco_azul = Line(width=grosso)
+            self._barra = Rectangle()
+        self.bind(pos=self._att, size=self._att)
+
+    def _att(self, *_):
+        cx, cy = self.center
+        raio = min(self.width, self.height) / 2 - dp(2)
+        # Ângulos do Kivy: 0° = norte, sentido horário.
+        self._arco_vermelho.circle = (cx, cy, raio, 315, 405)  # topo
+        self._arco_azul.circle = (cx, cy, raio, 45, 100)       # direita (até a barra)
+        self._arco_verde.circle = (cx, cy, raio, 135, 225)     # base
+        self._arco_amarelo.circle = (cx, cy, raio, 225, 315)   # esquerda
+        altura_barra = dp(4.5)
+        self._barra.pos = (cx, cy - altura_barra / 2)
+        self._barra.size = (raio + dp(1), altura_barra)
+
+
+class BotaoGoogle(ButtonBehavior, BoxLayout):
+    """Botão de login no padrão que todo usuário reconhece dos outros apps:
+    fundo branco, borda cinza discreta, o "G" colorido e o texto
+    "Continuar com o Google" em cinza-escuro."""
+
+    def __init__(self, texto="Continuar com o Google", **kwargs):
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(52))
+        kwargs.setdefault("spacing", dp(10))
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(1, 1, 1, 1)
+            self._fundo = RoundedRectangle(radius=[dp(26)])
+            Color(0.83, 0.83, 0.85, 1)
+            self._borda = Line(width=1.1)
+        self.bind(pos=self._att, size=self._att)
+
+        self.add_widget(Widget())  # espaçador: centraliza logo + texto
+        self._logo = _LogoGoogleG(pos_hint={"center_y": 0.5})
+        self.add_widget(self._logo)
+        rotulo = Label(text=texto, color=(0.24, 0.25, 0.26, 1), bold=True,
+                       font_size="15sp", size_hint_x=None)
+        rotulo.bind(texture_size=lambda l, t: setattr(l, "width", t[0]))
+        self.add_widget(rotulo)
+        self.add_widget(Widget())
+
+    def _att(self, *_):
+        self._fundo.pos = self.pos
+        self._fundo.size = self.size
+        self._borda.rounded_rectangle = (
+            self.x, self.y, self.width, self.height, dp(26))
 
 
 def desfocar_campos(widget):
