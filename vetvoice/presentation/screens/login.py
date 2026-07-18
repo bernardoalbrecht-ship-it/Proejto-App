@@ -14,7 +14,8 @@ from vetvoice.presentation.theme import (
     CORES, FONTE_ICONES, ICONES, pintar_fundo, rotulo_icone,
 )
 from vetvoice.presentation.widgets import (
-    Botao, BotaoGoogle, Campo, Cartao, etiqueta, texto_livre,
+    Botao, BotaoGoogle, Campo, Cartao, RolagemComCampos, desfocar_campos,
+    etiqueta, texto_livre,
 )
 
 
@@ -50,8 +51,12 @@ class TelaLogin(Screen):
         topo.add_widget(Widget())
         raiz.add_widget(topo)
 
-        # --- Abaixo: cartão de login/cadastro ---
-        meio = BoxLayout(orientation="vertical", padding=dp(22), spacing=dp(14))
+        # --- Abaixo: cartão de login/cadastro (rolável, para o teclado nunca
+        # esconder o botão Entrar) ---
+        scroll = RolagemComCampos()
+        meio = BoxLayout(orientation="vertical", padding=dp(22),
+                         spacing=dp(14), size_hint_y=None)
+        meio.bind(minimum_height=meio.setter("height"))
         cartao = Cartao()
         cartao.add_widget(texto_livre("[b]Entrar[/b]", cor=CORES["texto"],
                                       tamanho="18sp", altura=dp(28)))
@@ -62,6 +67,9 @@ class TelaLogin(Screen):
         cartao.add_widget(etiqueta("Seu nome"))
         self.campo_nome = Campo(multiline=False, hint_text="Ex: Dr. João",
                                 size_hint_y=None, height=dp(46))
+        # Apertar "OK/Ir" no teclado também entra — caminho garantido mesmo se
+        # o botão ficar atrás do teclado.
+        self.campo_nome.bind(on_text_validate=self._entrar)
         cartao.add_widget(self.campo_nome)
 
         botao_entrar = Botao(texto=rotulo_icone("estetoscopio", "Entrar"),
@@ -104,8 +112,8 @@ class TelaLogin(Screen):
         cartao.add_widget(self._caixa_ajuda)
 
         meio.add_widget(cartao)
-        meio.add_widget(Widget())
-        raiz.add_widget(meio)
+        scroll.add_widget(meio)
+        raiz.add_widget(scroll)
         self.add_widget(raiz)
 
     def _alternar_ajuda(self, *_):
@@ -116,6 +124,10 @@ class TelaLogin(Screen):
         self._caixa_ajuda.height = dp(178) if escondida else 0
 
     def _entrar(self, *_):
+        # Fecha o teclado antes de tudo: no Android o teclado aberto cobre o
+        # botão e a tela se reposiciona no meio do toque, fazendo o "soltar"
+        # cair fora do botão (por isso "não acontecia nada" ao tocar Entrar).
+        desfocar_campos(self)
         nome = self.campo_nome.text.strip()
         if not nome:
             aviso("Atenção", "Escreva seu nome para entrar (versão beta).")
