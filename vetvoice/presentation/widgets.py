@@ -8,6 +8,7 @@ módulo `theme`; aqui fica o comportamento dos widgets.
 
 from kivy.animation import Animation
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -116,25 +117,64 @@ class Campo(TextInput):
 
 
 class RolagemComCampos(ScrollView):
-    """ScrollView com a arbitragem de toque NATIVA do Kivy, apenas calibrada.
+    """ScrollView com a arbitragem de toque NATIVA do Kivy (botões e rolagem
+    seguem 100% o caminho padrão do framework), mais UM reforço cirúrgico só
+    para CAMPOS DE TEXTO.
 
-    Não sobrescrevemos NENHUM método de toque — as versões anteriores desta
-    classe tentavam decidir "toque vs. arraste" na mão e era isso que quebrava
-    a rolagem. O ScrollView padrão do Kivy já resolve o problema sozinho: ele
-    segura cada toque por até `scroll_timeout` ms; se o dedo andar mais que
-    `scroll_distance` nesse tempo, vira rolagem (mesmo começando em cima de um
-    botão, chip ou campo de texto); se não andar, o Kivy reenvia o toque ao
-    widget de baixo, que reage normal (clique, foco, teclado).
+    Por que o reforço: num toque rápido, o ScrollView entrega ao filho um
+    toque "simulado" (down+up em sequência). Em botões isso funciona perfeito;
+    em TextInput no Android o teclado abre e fecha na mesma hora — o usuário
+    precisava SEGURAR o dedo para conseguir digitar. Então, ao soltar um toque
+    que não virou arraste em cima de um campo, nós REAFIRMAMOS o foco um
+    instante depois (após a sequência simulada do ScrollView terminar).
+    Nenhum botão é afetado: só anotamos o campo sob o dedo, nunca consumimos
+    o toque.
 
-    Só ajustamos os dois valores documentados: o timeout padrão (55 ms) é
-    curto demais para dedo no celular — quem começa a arrastar devagar perdia
-    a janela e o toque ia para o botão. 400 ms dá tempo de sobra para o gesto
-    e não atrasa nada visível (toques rápidos disparam ao soltar o dedo)."""
+    Os dois valores documentados continuam calibrados: o timeout padrão
+    (55 ms) é curto demais para dedo no celular — quem começa a arrastar
+    devagar perdia a janela e o toque ia para o botão."""
 
     def __init__(self, **kwargs):
         kwargs.setdefault("scroll_timeout", 400)
         kwargs.setdefault("scroll_distance", dp(20))
         super().__init__(**kwargs)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            campo = self._campo_sob_toque(self, touch.pos[0], touch.pos[1])
+            if campo is not None:
+                touch.ud["rcc_campo"] = campo
+                touch.ud["rcc_inicio"] = tuple(touch.pos)
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        tratado = super().on_touch_up(touch)
+        campo = touch.ud.get("rcc_campo")
+        if (campo is not None and not campo.disabled
+                and self.collide_point(*touch.pos)):
+            x0, y0 = touch.ud.get("rcc_inicio", touch.pos)
+            arrastou = (abs(touch.pos[0] - x0) > self.scroll_distance
+                        or abs(touch.pos[1] - y0) > self.scroll_distance)
+            if not arrastou:
+                # 0.3 s: depois do "toque simulado" interno do ScrollView
+                # (que entrega o up ~0.2 s após o down). Se o teclado fechou
+                # nesse vaivém, aqui ele reabre e FICA aberto.
+                def _focar(*_):
+                    if not campo.disabled and not campo.focus:
+                        campo.focus = True
+                Clock.schedule_once(_focar, 0.3)
+        return tratado
+
+    def _campo_sob_toque(self, widget, tx, ty):
+        for filho in widget.children:
+            achado = self._campo_sob_toque(filho, tx, ty)
+            if achado is not None:
+                return achado
+        if isinstance(widget, TextInput) and not widget.disabled:
+            wx, wy = widget.to_window(widget.x, widget.y)
+            if wx <= tx <= wx + widget.width and wy <= ty <= wy + widget.height:
+                return widget
+        return None
 
 
 class _LogoGoogleG(Widget):
