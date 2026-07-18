@@ -128,10 +128,19 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
+        # O Android NÃO traz o app de volta sozinho quando o navegador abre
+        # numa aba/task separada — o usuário precisa trocar de app na mão.
+        # Sem essa instrução explícita, essa tela parecia um travamento.
         self.wfile.write(
             "<html><body style='font-family:sans-serif;text-align:center;"
-            "padding-top:60px'><h2>Login concluído</h2><p>Pode fechar esta "
-            "aba e voltar para o VetVoice.</p></body></html>".encode("utf-8"))
+            "padding:60px 24px'>"
+            "<h2>&#9989; Login concluído!</h2>"
+            "<p style='font-size:18px;line-height:1.5'>O VetVoice já recebeu "
+            "seu login.<br><br>"
+            "<b>Agora toque no botão de apps recentes (&#9723; ou a barrinha "
+            "embaixo da tela) e escolha o VetVoice para voltar</b> — o "
+            "navegador não volta sozinho, é só trocar de app manualmente."
+            "</p></body></html>".encode("utf-8"))
         if self.server.evento is not None:
             self.server.evento.set()
 
